@@ -19,3 +19,9 @@
 *.exe
 *.out
 *.app
+
+# Excons output files
+.build/
+debug/
+release/
+*.dblite
