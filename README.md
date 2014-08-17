@@ -40,16 +40,20 @@ Other functions may be defined to control the behavior of the extension, but onl
 - **IsShape()**
 
 Returns whether or not the translator should be based on CNodeTranslator or CShapeTranslator MtoA class.
+
 When not defined, it will be considered True.
 
 - **SupportVolumes()**
 
-Returns whether or not the translated node can be used to generate volume bounds ('box' node with step_size > 0).
+Returns whether or not the generated arnold procedural handles volume shapes.
+If not, extension will generate a *box* node rather than a *procedural* if maya's node has a *aiStepSize* attribute with its value set above 0.
+
 When not defined, it will be considered False.
 
 - **SupportInstances()**
 
-Returns whether or not ginstance should be created if shape is instanced in maya.
+Returns whether or not a *ginstance* node should be generated rather that a *procedural* node if the maya node is an instance.
+
 When not defined, it will be considered False.
 
 - **Export(renderFrame, mbStep, mbSampleFrame, nodeName, isInstance, masterNodeName)**
