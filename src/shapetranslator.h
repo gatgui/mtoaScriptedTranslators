@@ -33,7 +33,6 @@ private:
 private:
    
    bool m_motionBlur;
-   MDagPath m_masterPath;
    AtNode *m_masterNode;
 };
 

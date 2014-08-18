@@ -49,9 +49,11 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
    
    m_masterNode = 0;
    
-   if (!DoIsMasterInstance(m_dagPath, m_masterPath))
+   if (!IsMasterInstance())
    {
-      CNodeAttrHandle handle(m_masterPath);
+      MDagPath masterPath = GetMasterInstance();
+      
+      CNodeAttrHandle handle(masterPath);
       std::vector<CNodeTranslator*> translators;
       unsigned int n = m_session->GetActiveTranslators(handle, translators);
       
@@ -63,16 +65,6 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
             break;
          }
       }
-      
-      if (!m_masterNode)
-      {
-         // Arnold master node couldn't be found, export node as if it is not instanced
-         m_masterPath = m_dagPath;
-      }
-   }
-   else
-   {
-      m_masterPath = m_dagPath;
    }
    
    if (!m_masterNode)
@@ -265,7 +257,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    {
       command += "(\"" + m_dagPath.partialPathName() + "\", \"";
       command += AiNodeGetName(atNode);
-      command += "\"), (\"" + m_masterPath.partialPathName() + "\", \"";
+      command += "\"), (\"" + GetMasterInstance().partialPathName() + "\", \"";
       command += AiNodeGetName(m_masterNode);
       command += "\"))";
    }
@@ -300,8 +292,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    
    const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
    
-   GetShapeInstanceShader(m_masterPath, masterShadingEngine);
    GetShapeInstanceShader(m_dagPath, shadingEngine);
+   if (!IsMasterInstance())
+   {
+      GetShapeInstanceShader(GetMasterInstance(), masterShadingEngine);
+   }
+   else
+   {
+      masterShadingEngine.setObject(shadingEngine.object());
+   }
    
    AtMatrix matrix;
    MMatrix mmatrix = m_dagPath.inclusiveMatrix();
@@ -870,7 +869,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
          else
          {
-            command += "(\"" + m_masterPath.partialPathName() + "\", \"";
+            command += "(\"" + GetMasterInstance().partialPathName() + "\", \"";
             command += AiNodeGetName(m_masterNode);
             command += "\"))";
          }
