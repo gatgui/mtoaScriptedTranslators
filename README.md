@@ -56,11 +56,17 @@ Returns whether or not a *ginstance* node should be generated rather that a *pro
 
 When not defined, it will be considered False.
 
-- **Export(renderFrame, mbStep, mbSampleFrame, nodeName, isInstance, masterNodeName)**
+- **Export(renderFrame, mbStep, mbSampleFrame, nodeNamePair, masterNodeNamePair)**
+
+parameter *nodeNamePair*: tuple (mayaNodeName, arnoldNodeName)
+parameter *masterNodeNamePair*: None or tuple (mayaNodeName, arnoldNodeName)
 
 Returns a list of attributes that have been explicitly set in the function. All attributes appearing in this list won't be handled by the extension.
 
-- **Cleanup(nodeName, isInstance, masterNodeName)**
+- **Cleanup(nodeNamePair, masterNodeNamePair)**
+
+parameter *nodeNamePair*: tuple (mayaNodeName, arnoldNodeName)
+parameter *masterNodeNamePair*: None or tuple (mayaNodeName, arnoldNodeName)
 
 Called on last export step to cleanup any internally maintained data.
 

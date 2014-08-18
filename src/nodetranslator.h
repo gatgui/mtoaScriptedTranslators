@@ -12,7 +12,6 @@ public:
    virtual ~CScriptedNodeTranslator();
    
    virtual AtNode* CreateArnoldNodes();
-   virtual void SetArnoldNodeName(AtNode* arnoldNode, const char* tag="");
    virtual AtNode* Init(CArnoldSession* session, MObject &object, MString outputAttr="");
    virtual void Export(AtNode* atNode);
    virtual void ExportMotion(AtNode* atNode, unsigned int step);

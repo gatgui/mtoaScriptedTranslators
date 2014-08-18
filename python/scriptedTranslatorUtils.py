@@ -156,14 +156,6 @@ def GetDeformationBlur(nodeName):
     else:
         return False
 
-def StripNamespaces():
-    if cmds.attributeQuery("stripNamespaces", exists=True, node="defaultArnoldRenderOptions"):
-        return cmds.getAttr("defaultArnoldRenderOptions.stripNamespaces")
-    else:
-        return False
-
-def RemoveNamespacesIn(name):
-    return "|".join(map(lambda x: x.split(":")[-1], name.split("|")))
 
 class AttrData(object):
     TrueValues = ["1", "on", "true", "True"]

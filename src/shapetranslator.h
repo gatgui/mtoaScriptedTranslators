@@ -14,7 +14,6 @@ public:
    virtual ~CScriptedShapeTranslator();
    
    virtual AtNode* CreateArnoldNodes();
-   virtual void SetArnoldNodeName(AtNode* arnoldNode, const char* tag="");
    virtual AtNode* Init(CArnoldSession* session, MDagPath &dagPath, MString outputAttr="");
    virtual AtNode* Init(CArnoldSession* session, MObject &object, MString outputAttr="");
    virtual void Export(AtNode* atNode);
@@ -34,6 +33,8 @@ private:
 private:
    
    bool m_motionBlur;
+   MDagPath m_masterPath;
+   AtNode *m_masterNode;
 };
 
 #endif

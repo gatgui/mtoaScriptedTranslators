@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include "extension/Extension.h"
 
 struct CScriptedTranslator
@@ -36,12 +37,10 @@ MStatus RemovePluginLoadedCallback();
 bool StripNamespaces(CArnoldSession *session);
 void RemoveNamespacesIn(MString &path);
 
-float GetMotionStepFrame(CArnoldSession *session, int step);
+float GetSampleFrame(CArnoldSession *session, unsigned int step);
 
 bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val);
 void DestroyValue(CAttrData &data, AtParamValue *val);
-
-bool StringInList(const MString &str, const MStringArray &ary);
 
 bool HasParameter(const AtNodeEntry *anodeEntry, const char *param, AtNode *anode=NULL, const char *decl=NULL);
 

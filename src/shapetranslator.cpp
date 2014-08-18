@@ -10,7 +10,7 @@ void* CScriptedShapeTranslator::creator()
 }
 
 CScriptedShapeTranslator::CScriptedShapeTranslator()
-   : CShapeTranslator(), m_motionBlur(false)
+   : CShapeTranslator(), m_motionBlur(false), m_masterNode(0)
 {
 }
 
@@ -47,8 +47,35 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
    float step = FindMayaPlug("aiStepSize").asFloat();
    bool asVolume =  (step > AI_EPSILON);
    
-   MDagPath masterDag;
-   if (DoIsMasterInstance(m_dagPath, masterDag))
+   m_masterNode = 0;
+   
+   if (!DoIsMasterInstance(m_dagPath, m_masterPath))
+   {
+      CNodeAttrHandle handle(m_masterPath);
+      std::vector<CNodeTranslator*> translators;
+      unsigned int n = m_session->GetActiveTranslators(handle, translators);
+      
+      for (unsigned int i=0; i<n; ++i)
+      {
+         m_masterNode = translators[i]->GetArnoldRootNode();
+         if (m_masterNode)
+         {
+            break;
+         }
+      }
+      
+      if (!m_masterNode)
+      {
+         // Arnold master node couldn't be found, export node as if it is not instanced
+         m_masterPath = m_dagPath;
+      }
+   }
+   else
+   {
+      m_masterPath = m_dagPath;
+   }
+   
+   if (!m_masterNode)
    {
       if (asVolume && !translatorIt->second.supportVolumes)
       {
@@ -72,25 +99,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
    }
 }
 
-void CScriptedShapeTranslator::SetArnoldNodeName(AtNode* arnoldNode, const char* tag)
-{
-   MDagPath path = GetMayaDagPath();
-   MString name = path.partialPathName();
-   
-   if (m_session && StripNamespaces(m_session))
-   {
-      RemoveNamespacesIn(name);
-   }
-   
-   if (tag && strlen(tag) > 0)
-   {
-      name += "_" + MString(tag);
-   }
-   
-   AiNodeSetStr(arnoldNode, "name", name.asChar());
-}
-
-// Get shading engine associated with a custom shape
+// Get shading engine
 //
 void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDependencyNode &shadingEngineNode)
 {
@@ -238,24 +247,27 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    command += ", ";
    
    // current sample frame
-   sprintf(buffer, "%f", GetMotionStepFrame(m_session, step));
+   sprintf(buffer, "%f", GetSampleFrame(m_session, step));
    command += buffer;
    command += ", ";
    
    // List of arnold attributes the custom shape export command has overriden
    MStringArray attrs;
    
-   MDagPath masterDag;
-   if (DoIsMasterInstance(m_dagPath, masterDag))
+   if (!m_masterNode)
    {
-      command += "\"" + m_dagPath.partialPathName() + "\", 0, \"\")";
+      command += "(\"" + m_dagPath.partialPathName() + "\", \"";
+      command += AiNodeGetName(atNode);
+      command += "\"), None)";
       isMasterDag = true;
-      // If IsMasterInstance return true, masterDag isn't set
-      masterDag = m_dagPath;
    }
    else
    {
-      command += "\"" + m_dagPath.partialPathName() + "\", 1, \"" + masterDag.partialPathName() + "\")";
+      command += "(\"" + m_dagPath.partialPathName() + "\", \"";
+      command += AiNodeGetName(atNode);
+      command += "\"), (\"" + m_masterPath.partialPathName() + "\", \"";
+      command += AiNodeGetName(m_masterNode);
+      command += "\"))";
    }
    
    MStatus status = MGlobal::executePythonCommand(command, attrs);
@@ -265,7 +277,16 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       return;
    }
    
-   // Should be getting displacement shader from masterDag only [arnold do not support displacement shader overrides for ginstance]
+   // Build set of attributes already processed
+   std::set<std::string> attrsSet;
+   for (unsigned int i=0; i<attrs.length(); ++i)
+   {
+      attrsSet.insert(attrs[i].asChar());
+   }
+   std::set<std::string>::iterator attrsEnd = attrsSet.end();
+   
+   // Should be getting displacement shader from master instance only
+   //   as arnold do not support displacement shader overrides for ginstance
    MFnDependencyNode masterShadingEngine;
    MFnDependencyNode shadingEngine;
    float dispPadding = -AI_BIG;
@@ -277,22 +298,9 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    bool outputDispZeroValue = false;
    bool outputDispAutobump = false;
    
-   MString anodeName = m_dagPath.partialPathName();
-   if (m_session && StripNamespaces(m_session))
-   {
-      RemoveNamespacesIn(anodeName);
-   }
+   const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
    
-   AtNode *anode = AiNodeLookUpByName(anodeName.asChar());
-   
-   if (anode == NULL)
-   {
-      return;
-   }
-   
-   const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(anode);
-   
-   GetShapeInstanceShader(masterDag, masterShadingEngine);
+   GetShapeInstanceShader(m_masterPath, masterShadingEngine);
    GetShapeInstanceShader(m_dagPath, shadingEngine);
    
    AtMatrix matrix;
@@ -300,7 +308,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    ConvertMatrix(matrix, mmatrix);
    
    // Set transformation matrix
-   if (!StringInList("matrix", attrs))
+   if (attrsSet.find("matrix") == attrsEnd)
    {
       if (HasParameter(anodeEntry, "matrix"))
       {
@@ -310,23 +318,23 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             {
                AtArray* matrices = AiArrayAllocate(1, GetNumMotionSteps(), AI_TYPE_MATRIX);
                AiArraySetMtx(matrices, step, matrix);
-               AiNodeSetArray(anode, "matrix", matrices);
+               AiNodeSetArray(atNode, "matrix", matrices);
             }
             else
             {
-               AtArray* matrices = AiNodeGetArray(anode, "matrix");
+               AtArray* matrices = AiNodeGetArray(atNode, "matrix");
                AiArraySetMtx(matrices, step, matrix);
             }
          }
          else
          {
-            AiNodeSetMatrix(anode, "matrix", matrix);
+            AiNodeSetMatrix(atNode, "matrix", matrix);
          }
       }
    }
    
    // Set bounding box
-   if (!StringInList("min", attrs) && !StringInList("max", attrs))
+   if (attrsSet.find("min") == attrsEnd && attrsSet.find("max") == attrsEnd)
    {
       // Now check if min and max parameters are valid parameter names on arnold node
       if (HasParameter(anodeEntry, "min") != 0 && HasParameter(anodeEntry, "max") != 0)
@@ -338,15 +346,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             MPoint bmin = bbox.min();
             MPoint bmax = bbox.max();
             
-            AiNodeSetPnt(anode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
-            AiNodeSetPnt(anode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
+            AiNodeSetPnt(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
+            AiNodeSetPnt(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
          }
          else
          {
             if (transformBlur || deformBlur)
             {
-               AtPoint cmin = AiNodeGetPnt(anode, "min");
-               AtPoint cmax = AiNodeGetPnt(anode, "max");
+               AtPoint cmin = AiNodeGetPnt(atNode, "min");
+               AtPoint cmax = AiNodeGetPnt(atNode, "max");
                
                MBoundingBox bbox = node.boundingBox();
                
@@ -366,8 +374,8 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                if (bmax.z > cmax.z)
                   cmax.z = static_cast<float>(bmax.z);
                
-               AiNodeSetPnt(anode, "min", cmin.x, cmin.y, cmin.z);
-               AiNodeSetPnt(anode, "max", cmax.x, cmax.y, cmax.z);
+               AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+               AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
             }
          }
       }
@@ -378,402 +386,441 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       // Set common attributes
       MPlug plug;
       
-      if (!StringInList("subdiv_type", attrs))
+      if (AiNodeIs(atNode, "procedural"))
       {
-         plug = node.findPlug("subdiv_type");
-         if (plug.isNull())
+         // Note: it is up to the procedural to properly forward (or not) those parameters to the node
+         //       it creates
+         
+         if (attrsSet.find("subdiv_type") == attrsEnd)
          {
-            plug = node.findPlug("aiSubdivType");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_type", anode, "constant INT"))
-         {
-            AiNodeSetInt(anode, "subdiv_type", plug.asInt());
-         }
-      }
-      
-      if (!StringInList("subdiv_iterations", attrs))
-      {
-         plug = node.findPlug("subdiv_iterations");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSubdivIterations");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_iterations", anode, "constant BYTE"))
-         {
-            AiNodeSetByte(anode, "subdiv_iterations", plug.asInt());
-         }
-      }
-      
-      if (!StringInList("subdiv_adaptive_metric", attrs))
-      {
-         plug = node.findPlug("subdiv_adaptive_metric");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSubdivAdaptiveMetric");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_adaptive_metric", anode, "constant INT"))
-         {
-            AiNodeSetInt(anode, "subdiv_adaptive_metric", plug.asInt());
-         }
-      }
-      
-      if (!StringInList("subdiv_pixel_error", attrs))
-      {
-         plug = node.findPlug("subdiv_pixel_error");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSubdivPixelError");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_pixel_error", anode, "constant FLOAT"))
-         {
-            AiNodeSetFlt(anode, "subdiv_pixel_error", plug.asFloat());
-         }
-      }
-      
-      if (!StringInList("subdiv_dicing_camera", attrs))
-      {
-         plug = node.findPlug("subdiv_dicing_camera");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSubdivDicingCamera");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_dicing_camera", anode, "constant NODE"))
-         {
-            MString cameraName = plug.asString();
-            
-            AtNode *cameraNode = NULL;
-            
-            if (cameraName != "" && cameraName != "Default")
+            plug = FindMayaPlug("subdiv_type");
+            if (plug.isNull())
             {
-               if (m_session && StripNamespaces(m_session)) RemoveNamespacesIn(cameraName);
-               cameraNode = AiNodeLookUpByName(cameraName.asChar());
+               plug = FindMayaPlug("aiSubdivType");
             }
-            
-            AiNodeSetPtr(anode, "subdiv_dicing_camera", cameraNode);
-         }
-      }
-      
-      if (!StringInList("subdiv_uv_smoothing", attrs))
-      {
-         plug = node.findPlug("subdiv_uv_smoothing");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSubdivUvSmoothing");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_uv_smoothing", anode, "constant INT"))
-         {
-            AiNodeSetInt(anode, "subdiv_uv_smoothing", plug.asInt());
-         }
-      }
-      
-      if (!StringInList("subdiv_smooth_derivs", attrs))
-      {
-         plug = node.findPlug("aiSubdivSmoothDerivs");
-         if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_smooth_derivs", anode, "constant BOOL"))
-         {
-            AiNodeSetBool(anode, "subdiv_smooth_derivs", plug.asBool());
-         }
-      }
-      
-      if (!StringInList("smoothing", attrs))
-      {
-         // Use maya shape built-in attribute
-         plug = node.findPlug("smoothShading");
-         if (!plug.isNull() && HasParameter(anodeEntry, "smoothing", anode, "constant BOOL"))
-         {
-            AiNodeSetBool(anode, "smoothing", plug.asBool());
-         }
-      }
-      
-      if (!StringInList("disp_height", attrs))
-      {
-         plug = node.findPlug("aiDispHeight");
-         if (!plug.isNull())
-         {
-            outputDispHeight = true;
-            dispHeight = plug.asFloat();
-         }
-      }
-      
-      if (!StringInList("disp_zero_value", attrs))
-      {
-         plug = node.findPlug("aiDispZeroValue");
-         if (!plug.isNull())
-         {
-            outputDispZeroValue = true;
-            dispZeroValue = plug.asFloat();
-         }
-      }
-      
-      if (!StringInList("disp_autobump", attrs))
-      {
-         plug = node.findPlug("aiDispAutobump");
-         if (!plug.isNull())
-         {
-            outputDispAutobump = true;
-            dispAutobump = plug.asBool();
-         }
-      }
-      
-      if (!StringInList("disp_padding", attrs))
-      {
-         plug = node.findPlug("aiDispPadding");
-         if (!plug.isNull())
-         {
-            outputDispPadding = true;
-            dispPadding = MAX(dispPadding, plug.asFloat());
-         }
-      }
-      
-      // Set diplacement shader
-      if (!StringInList("disp_map", attrs))
-      {
-         if (masterShadingEngine.object() != MObject::kNullObj)
-         {
-            MPlugArray shaderConns;
-            
-            MPlug shaderPlug = masterShadingEngine.findPlug("displacementShader");
-            
-            shaderPlug.connectedTo(shaderConns, true, false);
-            
-            if (shaderConns.length() > 0)
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_type", atNode, "constant INT"))
             {
-               MFnDependencyNode dispNode(shaderConns[0].node());
-               
-               plug = dispNode.findPlug("aiDisplacementPadding");
-               if (!plug.isNull())
-               {
-                  outputDispPadding = true;
-                  dispPadding = MAX(dispPadding, plug.asFloat());
-               }
-               
-               plug = dispNode.findPlug("aiDisplacementAutoBump");
-               if (!plug.isNull())
-               {
-                  outputDispAutobump = true;
-                  dispAutobump = dispAutobump || plug.asBool();
-               }
-               
-               if (HasParameter(anodeEntry, "disp_map", anode, "constant ARRAY NODE"))
-               {
-                  AtNode *dispImage = ExportNode(shaderConns[0]);
-                  AiNodeSetArray(anode, "disp_map", AiArrayConvert(1, 1, AI_TYPE_NODE, &dispImage));
-               }
+               AiNodeSetInt(atNode, "subdiv_type", plug.asInt());
             }
          }
+         
+         if (attrsSet.find("subdiv_iterations") == attrsEnd)
+         {
+            plug = FindMayaPlug("subdiv_iterations");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSubdivIterations");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_iterations", atNode, "constant BYTE"))
+            {
+               AiNodeSetByte(atNode, "subdiv_iterations", plug.asInt());
+            }
+         }
+         
+         if (attrsSet.find("subdiv_adaptive_metric") == attrsEnd)
+         {
+            plug = FindMayaPlug("subdiv_adaptive_metric");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSubdivAdaptiveMetric");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_adaptive_metric", atNode, "constant INT"))
+            {
+               AiNodeSetInt(atNode, "subdiv_adaptive_metric", plug.asInt());
+            }
+         }
+         
+         if (attrsSet.find("subdiv_pixel_error") == attrsEnd)
+         {
+            plug = FindMayaPlug("subdiv_pixel_error");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSubdivPixelError");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_pixel_error", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "subdiv_pixel_error", plug.asFloat());
+            }
+         }
+         
+         if (attrsSet.find("subdiv_dicing_camera") == attrsEnd)
+         {
+            plug = FindMayaPlug("subdiv_dicing_camera");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSubdivDicingCamera");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_dicing_camera", atNode, "constant NODE"))
+            {
+               MString cameraName = plug.asString();
+               
+               AtNode *cameraNode = NULL;
+               
+               if (cameraName != "" && cameraName != "Default")
+               {
+                  if (m_session && StripNamespaces(m_session)) RemoveNamespacesIn(cameraName);
+                  cameraNode = AiNodeLookUpByName(cameraName.asChar());
+               }
+               
+               AiNodeSetPtr(atNode, "subdiv_dicing_camera", cameraNode);
+            }
+         }
+         
+         if (attrsSet.find("subdiv_uv_smoothing") == attrsEnd)
+         {
+            plug = FindMayaPlug("subdiv_uv_smoothing");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSubdivUvSmoothing");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_uv_smoothing", atNode, "constant INT"))
+            {
+               AiNodeSetInt(atNode, "subdiv_uv_smoothing", plug.asInt());
+            }
+         }
+         
+         if (attrsSet.find("subdiv_smooth_derivs") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiSubdivSmoothDerivs");
+            if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_smooth_derivs", atNode, "constant BOOL"))
+            {
+               AiNodeSetBool(atNode, "subdiv_smooth_derivs", plug.asBool());
+            }
+         }
+         
+         if (attrsSet.find("smoothing") == attrsEnd)
+         {
+            // Use maya shape built-in attribute
+            plug = FindMayaPlug("smoothShading");
+            if (!plug.isNull() && HasParameter(anodeEntry, "smoothing", atNode, "constant BOOL"))
+            {
+               AiNodeSetBool(atNode, "smoothing", plug.asBool());
+            }
+         }
+         
+         if (attrsSet.find("disp_height") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiDispHeight");
+            if (!plug.isNull())
+            {
+               outputDispHeight = true;
+               dispHeight = plug.asFloat();
+            }
+         }
+         
+         if (attrsSet.find("disp_zero_value") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiDispZeroValue");
+            if (!plug.isNull())
+            {
+               outputDispZeroValue = true;
+               dispZeroValue = plug.asFloat();
+            }
+         }
+         
+         if (attrsSet.find("disp_autobump") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiDispAutobump");
+            if (!plug.isNull())
+            {
+               outputDispAutobump = true;
+               dispAutobump = plug.asBool();
+            }
+         }
+         
+         if (attrsSet.find("disp_padding") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiDispPadding");
+            if (!plug.isNull())
+            {
+               outputDispPadding = true;
+               dispPadding = MAX(dispPadding, plug.asFloat());
+            }
+         }
+         
+         // Set diplacement shader
+         if (attrsSet.find("disp_map") == attrsEnd)
+         {
+            if (masterShadingEngine.object() != MObject::kNullObj)
+            {
+               MPlugArray shaderConns;
+               
+               MPlug shaderPlug = masterShadingEngine.findPlug("displacementShader");
+               
+               shaderPlug.connectedTo(shaderConns, true, false);
+               
+               if (shaderConns.length() > 0)
+               {
+                  MFnDependencyNode dispNode(shaderConns[0].node());
+                  
+                  plug = dispNode.findPlug("aiDisplacementPadding");
+                  if (!plug.isNull())
+                  {
+                     outputDispPadding = true;
+                     dispPadding = MAX(dispPadding, plug.asFloat());
+                  }
+                  
+                  plug = dispNode.findPlug("aiDisplacementAutoBump");
+                  if (!plug.isNull())
+                  {
+                     outputDispAutobump = true;
+                     dispAutobump = dispAutobump || plug.asBool();
+                  }
+                  
+                  if (HasParameter(anodeEntry, "disp_map", atNode, "constant ARRAY NODE"))
+                  {
+                     AtNode *dispImage = ExportNode(shaderConns[0]);
+                     AiNodeSetArray(atNode, "disp_map", AiArrayConvert(1, 1, AI_TYPE_NODE, &dispImage));
+                  }
+               }
+            }
+         }
+         
+         if (outputDispHeight && HasParameter(anodeEntry, "disp_height", atNode, "constant FLOAT"))
+         {
+            AiNodeSetFlt(atNode, "disp_height", dispHeight);
+         }
+         if (outputDispZeroValue && HasParameter(anodeEntry, "disp_zero_value", atNode, "constant FLOAT"))
+         {
+            AiNodeSetFlt(atNode, "disp_zero_value", dispZeroValue);
+         }
+         if (outputDispPadding && HasParameter(anodeEntry, "disp_padding", atNode, "constant FLOAT"))
+         {
+            AiNodeSetFlt(atNode, "disp_padding", dispPadding);
+         }
+         if (outputDispAutobump && HasParameter(anodeEntry, "disp_autobump", atNode, "constant BOOL"))
+         {
+            AiNodeSetBool(atNode, "disp_autobump", dispAutobump);
+         }
+         
+         // Old point based SSS parameter
+         if (attrsSet.find("sss_sample_distribution") == attrsEnd)
+         {
+            plug = FindMayaPlug("sss_sample_distribution");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSssSampleDistribution");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "sss_sample_distribution", atNode, "constant INT"))
+            {
+               AiNodeSetInt(atNode, "sss_sample_distribution", plug.asInt());
+            }
+         }
+         
+         // Old point based SSS parameter
+         if (attrsSet.find("sss_sample_spacing") == attrsEnd)
+         {
+            plug = FindMayaPlug("sss_sample_spacing");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiSssSampleSpacing");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "sss_sample_spacing", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "sss_sample_spacing", plug.asFloat());
+            }
+         }
+         
+         if (attrsSet.find("min_pixel_width") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiMinPixelWidth");
+            if (!plug.isNull() && HasParameter(anodeEntry, "min_pixel_width", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "min_pixel_width", plug.asFloat());
+            }
+         }
+         
+         if (attrsSet.find("mode") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiMode");
+            if (!plug.isNull() && HasParameter(anodeEntry, "mode", atNode, "constant INT"))
+            {
+               AiNodeSetInt(atNode, "mode", plug.asShort());
+            }
+         }
+         
+         if (attrsSet.find("basis") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiBasis");
+            if (!plug.isNull() && HasParameter(anodeEntry, "basis", atNode, "constant INT"))
+            {
+               AiNodeSetInt(atNode, "basis", plug.asShort());
+            }
+         }
       }
       
-      if (outputDispHeight && HasParameter(anodeEntry, "disp_height", anode, "constant FLOAT"))
+      if (AiNodeIs(atNode, "ginstance"))
       {
-         AiNodeSetFlt(anode, "disp_height", dispHeight);
+         if (attrsSet.find("node") == attrsEnd)
+         {
+            AiNodeSetPtr(atNode, "node", m_masterNode);
+         }
+         
+         if (attrsSet.find("inherit_xform") == attrsEnd)
+         {
+            AiNodeSetBool(atNode, "inherit_xform", false);
+         }
       }
-      if (outputDispZeroValue && HasParameter(anodeEntry, "disp_zero_value", anode, "constant FLOAT"))
+      else
       {
-         AiNodeSetFlt(anode, "disp_zero_value", dispZeroValue);
-      }
-      if (outputDispPadding && HasParameter(anodeEntry, "disp_padding", anode, "constant FLOAT"))
-      {
-         AiNodeSetFlt(anode, "disp_padding", dispPadding);
-      }
-      if (outputDispAutobump && HasParameter(anodeEntry, "disp_autobump", anode, "constant BOOL"))
-      {
-         AiNodeSetBool(anode, "disp_autobump", dispAutobump);
+         // box or procedural
+         if (attrsSet.find("step_size") == attrsEnd)
+         {
+            plug = FindMayaPlug("step_size");
+            if (plug.isNull())
+            {
+               plug = FindMayaPlug("aiStepSize");
+            }
+            if (!plug.isNull() && HasParameter(anodeEntry, "step_size", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "step_size", plug.asFloat());
+            }
+         }
       }
       
-      if (!StringInList("sidedness", attrs))
+      if (attrsSet.find("sidedness") == attrsEnd)
       {
          // Use maya shape built-in attribute
-         plug = node.findPlug("doubleSided");
-         if (!plug.isNull() && HasParameter(anodeEntry, "sidedness", anode, "constant BYTE"))
+         plug = FindMayaPlug("doubleSided");
+         if (!plug.isNull() && HasParameter(anodeEntry, "sidedness", atNode, "constant BYTE"))
          {
-            AiNodeSetByte(anode, "sidedness", plug.asBool() ? AI_RAY_ALL : 0);
+            AiNodeSetByte(atNode, "sidedness", plug.asBool() ? AI_RAY_ALL : 0);
             
             // Only set invert_normals if doubleSided attribute could be found
-            if (!plug.asBool() && !StringInList("invert_normals", attrs))
+            if (!plug.asBool() && attrsSet.find("invert_normals") == attrsEnd)
             {
                // Use maya shape built-in attribute
-               plug = node.findPlug("opposite");
-               if (!plug.isNull() && HasParameter(anodeEntry, "invert_normals", anode, "constant BOOL"))
+               plug = FindMayaPlug("opposite");
+               if (!plug.isNull() && HasParameter(anodeEntry, "invert_normals", atNode, "constant BOOL"))
                {
-                  AiNodeSetBool(anode, "invert_normals", plug.asBool());
+                  AiNodeSetBool(atNode, "invert_normals", plug.asBool());
                }
             }
          }
       }
       
-      // Old point based SSS parameter
-      if (!StringInList("sss_sample_distribution", attrs))
-      {
-         plug = node.findPlug("sss_sample_distribution");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSssSampleDistribution");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "sss_sample_distribution", anode, "constant INT"))
-         {
-            AiNodeSetInt(anode, "sss_sample_distribution", plug.asInt());
-         }
-      }
-      
-      // Old point based SSS parameter
-      if (!StringInList("sss_sample_spacing", attrs))
-      {
-         plug = node.findPlug("sss_sample_spacing");
-         if (plug.isNull())
-         {
-            plug = node.findPlug("aiSssSampleSpacing");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "sss_sample_spacing", anode, "constant FLOAT"))
-         {
-            AiNodeSetFlt(anode, "sss_sample_spacing", plug.asFloat());
-         }
-      }
-      
-      if (!StringInList("sss_setname", attrs))
-      {
-         plug = node.findPlug("aiSssSetname");
-         if (!plug.isNull() && plug.asString().length() > 0)
-         {
-            if (HasParameter(anodeEntry, "sss_setname", anode, "constant STRING"))
-            {
-               AiNodeSetStr(anode, "sss_setname", plug.asString().asChar());
-            }
-         }
-      }
-      
-      if (!StringInList("receive_shadows", attrs))
+      if (attrsSet.find("receive_shadows") == attrsEnd)
       {
          // Use maya shape built-in attribute
-         plug = node.findPlug("receiveShadows");
-         if (!plug.isNull() && HasParameter(anodeEntry, "receive_shadows", anode, "constant BOOL"))
+         plug = FindMayaPlug("receiveShadows");
+         if (!plug.isNull() && HasParameter(anodeEntry, "receive_shadows", atNode, "constant BOOL"))
          {
-            AiNodeSetBool(anode, "receive_shadows", plug.asBool());
+            AiNodeSetBool(atNode, "receive_shadows", plug.asBool());
          }
       }
       
-      if (!StringInList("self_shadows", attrs))
+      if (attrsSet.find("self_shadows") == attrsEnd)
       {
-         plug = node.findPlug("self_shadows");
+         plug = FindMayaPlug("self_shadows");
          if (plug.isNull())
          {
-            plug = node.findPlug("aiSelfShadows");
+            plug = FindMayaPlug("aiSelfShadows");
          }
-         if (!plug.isNull() && HasParameter(anodeEntry, "self_shadows", anode, "constant BOOL"))
+         if (!plug.isNull() && HasParameter(anodeEntry, "self_shadows", atNode, "constant BOOL"))
          {
-            AiNodeSetBool(anode, "self_shadows", plug.asBool());
+            AiNodeSetBool(atNode, "self_shadows", plug.asBool());
          }
       }
       
-      if (!StringInList("opaque", attrs))
+      if (attrsSet.find("opaque") == attrsEnd)
       {
-         plug = node.findPlug("opaque");
+         plug = FindMayaPlug("opaque");
          if (plug.isNull())
          {
-            plug = node.findPlug("aiOpaque");
+            plug = FindMayaPlug("aiOpaque");
          }
-         if (!plug.isNull() && HasParameter(anodeEntry, "opaque", anode, "constant BOOL"))
+         if (!plug.isNull() && HasParameter(anodeEntry, "opaque", atNode, "constant BOOL"))
          {
-            AiNodeSetBool(anode, "opaque", plug.asBool());
+            AiNodeSetBool(atNode, "opaque", plug.asBool());
          }
       }
       
-      if (!StringInList("visibility", attrs))
+      if (attrsSet.find("visibility") == attrsEnd)
       {
-         if (HasParameter(anodeEntry, "visibility", anode, "constant BYTE"))
+         if (HasParameter(anodeEntry, "visibility", atNode, "constant BYTE"))
          {
             int visibility = AI_RAY_ALL;
             
             // Use maya shape built-in attribute
-            plug = node.findPlug("castsShadows");
+            plug = FindMayaPlug("castsShadows");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_SHADOW;
             }
             
             // Use maya shape built-in attribute
-            plug = node.findPlug("primaryVisibility");
+            plug = FindMayaPlug("primaryVisibility");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_CAMERA;
             }
             
             // Use maya shape built-in attribute
-            plug = node.findPlug("visibleInReflections");
+            plug = FindMayaPlug("visibleInReflections");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_REFLECTED;
             }
             
             // Use maya shape built-in attribute
-            plug = node.findPlug("visibleInRefractions");
+            plug = FindMayaPlug("visibleInRefractions");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_REFRACTED;
             }
             
-            plug = node.findPlug("diffuse_visibility");
+            plug = FindMayaPlug("diffuse_visibility");
             if (plug.isNull())
             {
-               plug = node.findPlug("aiVisibleInDiffuse");
+               plug = FindMayaPlug("aiVisibleInDiffuse");
             }
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_DIFFUSE;
             }
             
-            plug = node.findPlug("glossy_visibility");
+            plug = FindMayaPlug("glossy_visibility");
             if (plug.isNull())
             {
-               plug = node.findPlug("aiVisibleInGlossy");
+               plug = FindMayaPlug("aiVisibleInGlossy");
             }
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_GLOSSY;
             }
             
-            AiNodeSetByte(anode, "visibility", visibility & 0xFF);
+            AiNodeSetByte(atNode, "visibility", visibility & 0xFF);
          }
       }
       
-      if (!StringInList("step_size", attrs))
+      if (attrsSet.find("sss_setname") == attrsEnd)
       {
-         plug = node.findPlug("step_size");
-         if (plug.isNull())
+         plug = FindMayaPlug("aiSssSetname");
+         if (!plug.isNull() && plug.asString().length() > 0)
          {
-            plug = node.findPlug("aiStepSize");
-         }
-         if (!plug.isNull() && HasParameter(anodeEntry, "step_size", anode, "constant FLOAT"))
-         {
-            AiNodeSetFlt(anode, "step_size", plug.asFloat());
-         }
-      }
-      
-      if (AiNodeIs(anode, "ginstance") && !StringInList("node", attrs))
-      {
-         MDagPath &masterDag = GetMasterInstance();
-         AtNode *masterNode = AiNodeLookUpByName(masterDag.partialPathName().asChar());
-         if (masterNode)
-         {
-            AiNodeSetPtr(anode, "node", masterNode);
+            if (HasParameter(anodeEntry, "sss_setname", atNode, "constant STRING"))
+            {
+               AiNodeSetStr(atNode, "sss_setname", plug.asString().asChar());
+            }
          }
       }
       
       // Set surface shader
-      if (HasParameter(anodeEntry, "shader", anode, "constant NODE"))
+      if (HasParameter(anodeEntry, "shader", atNode, "constant NODE"))
       {
-         if (!StringInList("shader", attrs))
+         if (attrsSet.find("shader") == attrsEnd)
          {
             if (shadingEngine.object() != MObject::kNullObj)
             {
                AtNode *shader = ExportNode(shadingEngine.findPlug("message"));
                if (shader != NULL)
                {
-                  AiNodeSetPtr(anode, "shader", shader);
+                  AiNodeSetPtr(atNode, "shader", shader);
                   
-                  if (AiNodeLookUpUserParameter(anode, "mtoa_shading_groups") == 0)
+                  if (AiNodeLookUpUserParameter(atNode, "mtoa_shading_groups") == 0)
                   {
-                     AiNodeDeclare(anode, "mtoa_shading_groups", "constant ARRAY NODE");
-                     AiNodeSetArray(anode, "mtoa_shading_groups", AiArrayConvert(1, 1, AI_TYPE_NODE, &shader));
+                     AiNodeDeclare(atNode, "mtoa_shading_groups", "constant ARRAY NODE");
+                     AiNodeSetArray(atNode, "mtoa_shading_groups", AiArrayConvert(1, 1, AI_TYPE_NODE, &shader));
                   }
                }
             }
@@ -781,24 +828,24 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       }
    }
    
-   ExportLightLinking(anode);
+   ExportLightLinking(atNode);
    
    MPlug plug = FindMayaPlug("aiTraceSets");
    if (!plug.isNull())
    {
-      ExportTraceSets(anode, plug);
+      ExportTraceSets(atNode, plug);
    }
    
    // Call cleanup command on last export step
    
    if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
    {
-      if (HasParameter(anodeEntry, "disp_padding", anode))
+      if (HasParameter(anodeEntry, "disp_padding", atNode))
       {
-         float padding = AiNodeGetFlt(anode, "disp_padding");
+         float padding = AiNodeGetFlt(atNode, "disp_padding");
          
-         AtPoint cmin = AiNodeGetPnt(anode, "min");
-         AtPoint cmax = AiNodeGetPnt(anode, "max");
+         AtPoint cmin = AiNodeGetPnt(atNode, "min");
+         AtPoint cmax = AiNodeGetPnt(atNode, "max");
          
          cmin.x -= padding;
          cmin.y -= padding;
@@ -807,21 +854,25 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          cmax.y += padding;
          cmax.z += padding;
          
-         AiNodeSetPnt(anode, "min", cmin.x, cmin.y, cmin.z);
-         AiNodeSetPnt(anode, "max", cmax.x, cmax.y, cmax.z);
+         AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+         AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
       }
       
       if (cleanupCmd != "")
       {
-         command = cleanupCmd + "(\"" + m_dagPath.partialPathName() + "\", ";
+         command = cleanupCmd += "((\"" + m_dagPath.partialPathName() + "\", \"";
+         command += AiNodeGetName(atNode);
+         command += "\"), ";
          
-         if (isMasterDag)
+         if (!m_masterNode)
          {
-            command += "0, \"\")";
+            command += "None)";
          }
          else
          {
-            command += "1, \"" + masterDag.partialPathName() + "\")";
+            command += "(\"" + m_masterPath.partialPathName() + "\", \"";
+            command += AiNodeGetName(m_masterNode);
+            command += "\"))";
          }
          
          status = MGlobal::executePythonCommand(command);

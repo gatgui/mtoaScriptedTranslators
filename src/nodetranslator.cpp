@@ -37,23 +37,6 @@ AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
    return AddArnoldNode("procedural");
 }
 
-void CScriptedNodeTranslator::SetArnoldNodeName(AtNode* arnoldNode, const char* tag)
-{
-   MString name = GetMayaNodeName();
-   
-   if (m_session && StripNamespaces(m_session))
-   {
-      RemoveNamespacesIn(name);
-   }
-   
-   if (tag && strlen(tag) > 0)
-   {
-      name += "_" + MString(tag);
-   }
-   
-   AiNodeSetStr(arnoldNode, "name", name.asChar());
-}
-
 void CScriptedNodeTranslator::Export(AtNode *atNode)
 {
    RunScripts(atNode, 0);
@@ -109,12 +92,12 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
    command += buffer;
    command += ", ";
    
-   // current sample frame
-   sprintf(buffer, "%f", GetMotionStepFrame(m_session, step));
+   sprintf(buffer, "%f", GetSampleFrame(m_session, step));
    command += buffer;
-   command += ", ";
    
-   command += "\"" + node.name() + "\", 0, \"\")";
+   command += ", \"(" + node.name() + "\", \"";
+   command += AiNodeGetName(atNode);
+   command += "\"), None)";
    
    MStringArray attrs;
    MStatus status = MGlobal::executePythonCommand(command, attrs);
@@ -124,27 +107,26 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       return;
    }
    
-   MString anodeName = node.name();
-   
-   if (m_session && StripNamespaces(m_session)) RemoveNamespacesIn(anodeName);
-   
-   AtNode *anode = AiNodeLookUpByName(anodeName.asChar());
-   
-   if (anode == NULL)
+   std::set<std::string> attrsSet;
+   for (unsigned int i=0; i<attrs.length(); ++i)
    {
-      return;
+      attrsSet.insert(attrs[i].asChar());
    }
+   std::set<std::string>::iterator attrsEnd = attrsSet.end();
    
-   if (!StringInList("min", attrs) || !StringInList("max", attrs))
+   if (attrsSet.find("min") == attrsEnd || attrsSet.find("max") == attrsEnd)
    {
-      AiNodeSetBool(anode, "load_at_init", true);
+      // Either min or max is missing, force load_at_init
+      AiNodeSetBool(atNode, "load_at_init", true);
    }
    
    if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
    {
       if (cleanupCmd != "")
       {
-         command = cleanupCmd + "(\"" + node.name() + "\", 0, \"\")";
+         command = cleanupCmd + "((\"" + node.name() + "\", \"";
+         command += AiNodeGetName(atNode);
+         command += "\"), None)";
          
          status = MGlobal::executePythonCommand(command);
          

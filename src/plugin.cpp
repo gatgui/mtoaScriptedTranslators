@@ -97,45 +97,7 @@ MStatus RemovePluginLoadedCallback()
    return status;
 }
 
-bool StripNamespaces(CArnoldSession *session)
-{
-   MFnDependencyNode opts(session->GetArnoldRenderOptions());
-   MPlug plug = opts.findPlug("stripNamespaces");
-   return (!plug.isNull() && plug.asBool());
-}
-
-void RemoveNamespacesIn(MString &path)
-{
-   MString outPath;
-   MStringArray spl0;
-   MStringArray spl1;
-   
-   if (path.split('|', spl0) == MS::kSuccess)
-   {
-      for (unsigned int i=0; i<spl0.length(); ++i)
-      {
-         spl1.clear();
-         
-         if (spl0[i].split(':', spl1) == MS::kSuccess)
-         {
-            outPath += spl1[spl1.length()-1];
-         }
-         else
-         {
-            outPath += spl0[i];
-         }
-         
-         if (i + 1 < spl0.length())
-         {
-            outPath += "|";
-         }
-      }
-      
-      path = outPath;
-   }
-}
-
-float GetMotionStepFrame(CArnoldSession *session, int step)
+float GetSampleFrame(CArnoldSession *session, unsigned int step)
 {
    MFnDependencyNode opts(session->GetArnoldRenderOptions());
    
@@ -413,18 +375,6 @@ void DestroyValue(CAttrData &data, AtParamValue *val)
          break;
       }
    }
-}
-
-bool StringInList(const MString &str, const MStringArray &ary)
-{
-   for (unsigned int i = 0; i < ary.length(); ++i)
-   {
-      if (ary[i] == str)
-      {
-         return true;
-      }
-   }
-   return false;
 }
 
 bool HasParameter(const AtNodeEntry *anodeEntry, const char *param, AtNode *anode, const char *decl)
