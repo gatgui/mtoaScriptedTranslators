@@ -156,6 +156,11 @@ def GetDeformationBlur(nodeName):
     else:
         return False
 
+def GetTransformationBlur(nodeName):
+    if cmds.getAttr("defaultArnoldRenderOptions.motion_blur_enable"):
+        return GetOverrideAttr(nodeName, "motionBlur", False)
+    else:
+        return False
 
 class AttrData(object):
     TrueValues = ["1", "on", "true", "True"]
