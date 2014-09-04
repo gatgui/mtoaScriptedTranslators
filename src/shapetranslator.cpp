@@ -451,14 +451,20 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
             if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_dicing_camera", atNode, "constant NODE"))
             {
-               MString cameraName = plug.asString();
-               
                AtNode *cameraNode = NULL;
                
-               if (cameraName != "" && cameraName != "Default")
+               MPlugArray plugs;
+               plug.connectedTo(plugs, true, false);
+               
+               if (plugs.length() == 1)
                {
-                  if (m_session && StripNamespaces(m_session)) RemoveNamespacesIn(cameraName);
-                  cameraNode = AiNodeLookUpByName(cameraName.asChar());
+                  MFnDagNode camDag(plugs[0].node());
+                  MDagPath camPath;
+                  
+                  if (camDag.getPath(camPath) == MS::kSuccess)
+                  {
+                     cameraNode = ExportDagPath(camPath);
+                  }
                }
                
                AiNodeSetPtr(atNode, "subdiv_dicing_camera", cameraNode);

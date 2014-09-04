@@ -34,9 +34,6 @@ void MayaPluginLoadedCallback(const MStringArray &strs, void *clientData);
 MCallbackId AddPluginLoadedCallback();
 MStatus RemovePluginLoadedCallback();
 
-bool StripNamespaces(CArnoldSession *session);
-void RemoveNamespacesIn(MString &path);
-
 float GetSampleFrame(CArnoldSession *session, unsigned int step);
 
 bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val);
