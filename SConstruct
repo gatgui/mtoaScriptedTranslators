@@ -18,9 +18,9 @@ else:
    defs.append("_LINUX")
    ext = ".so"
 
-mtoa_inc = ARGUMENTS.get("with-mtoa-inc", None)
-mtoa_lib = ARGUMENTS.get("with-mtoa-lib", None)
-mtoa_base = ARGUMENTS.get("with-mtoa", None)
+mtoa_inc = excons.GetArgument("with-mtoa-inc")
+mtoa_lib = excons.GetArgument("with-mtoa-lib")
+mtoa_base = excons.GetArgument("with-mtoa")
 
 if (mtoa_inc is None or mtoa_lib is None) and mtoa_base is None:
    print("Please provide mtoa SDK directory using with-mtoa or with-mtoa-inc/with-mtoa-lib flags")
