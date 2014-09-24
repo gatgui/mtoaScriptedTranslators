@@ -117,8 +117,8 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
    if (connections.length() == 0)
    {
       // Check for direct surface shader connection
-      bool found = false;
       MGlobal::executeCommand("listConnections -s 1 -d 0 -c 1 "+dagPath.fullPathName(), connections);
+      
       for (unsigned int cidx=0; cidx<connections.length(); cidx+=2)
       {
          MString srcNode = connections[cidx+1];
@@ -128,18 +128,19 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
          if (rv.length() > 0 && rv[0].indexW("arnold/shader/surface") != -1)
          {
             connections.clear();
+            
             MGlobal::executeCommand("listConnections -s 0 -d 1 -c 1 -type shadingEngine "+srcNode, connections);
-            found = true;
+            
+            if (connections.length() == 2)
+            {
+               sl.add(connections[1]);
+            }
+            
             break;
          }
       }
-      if (!found)
-      {
-         connections.clear();
-      }
    }
-   
-   if (connections.length() == 2)
+   else if (connections.length() == 2)
    {
       // Single connection, use same shader for all instances
       sl.add(connections[1]);
@@ -147,7 +148,10 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
    else if (connections.length() > 2)
    {
       // Many connections, expects the destination plug in shape to be an array
-      // Use instance number as logical index
+      // Use instance number as logical index, if this fails, use first shadingEngine in list
+      
+      bool found = false;
+      
       sprintf(buffer, "[%d]", dagPath.instanceNumber());
       MString iidx = buffer;
       
@@ -166,16 +170,35 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
          }
          
          sl.add(connections[cidx+1]);
+         
+         found = true;
+         
          break;
+      }
+      
+      if (!found)
+      {
+         MGlobal::displayWarning("[mtoaScriptedTranslators] Instance shader plug not found, use first found shadingEngine \"" + connections[1] + "\"");
+         sl.add(connections[1]);
       }
    }
    
    if (sl.length() == 1)
    {
       MObject shadingEngineObj;
-      sl.getDependNode(0, shadingEngineObj);
       
-      shadingEngineNode.setObject(shadingEngineObj);
+      if (sl.getDependNode(0, shadingEngineObj) == MS::kSuccess && shadingEngineObj.apiType() == MFn::kShadingEngine)
+      {
+         shadingEngineNode.setObject(shadingEngineObj);
+      }
+      else
+      {
+         if (shadingEngineObj != MObject::kNullObj)
+         {
+            MFnDependencyNode dn(shadingEngineObj);
+            MGlobal::displayWarning("[mtoaScriptedTranslators] Not a shading engine \"" + dn.name() + "\"");
+         }
+      }
    }
 }
 
@@ -820,12 +843,23 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AtNode *shader = ExportNode(shadingEngine.findPlug("message"));
                if (shader != NULL)
                {
-                  AiNodeSetPtr(atNode, "shader", shader);
+                  const AtNodeEntry *entry = AiNodeGetNodeEntry(shader);
                   
-                  if (AiNodeLookUpUserParameter(atNode, "mtoa_shading_groups") == 0)
+                  if (AiNodeEntryGetType(entry) != AI_NODE_SHADER)
                   {
-                     AiNodeDeclare(atNode, "mtoa_shading_groups", "constant ARRAY NODE");
-                     AiNodeSetArray(atNode, "mtoa_shading_groups", AiArrayConvert(1, 1, AI_TYPE_NODE, &shader));
+                     MGlobal::displayWarning("[mtoaScriptedTranslators] Node generated from \"" + shadingEngine.name() +
+                                             "\" of type " + shadingEngine.typeName() + " for shader is not a shader but a " +
+                                             MString(AiNodeEntryGetTypeName(entry)));
+                  }
+                  else
+                  {
+                     AiNodeSetPtr(atNode, "shader", shader);
+                     
+                     if (AiNodeLookUpUserParameter(atNode, "mtoa_shading_groups") == 0)
+                     {
+                        AiNodeDeclare(atNode, "mtoa_shading_groups", "constant ARRAY NODE");
+                        AiNodeSetArray(atNode, "mtoa_shading_groups", AiArrayConvert(1, 1, AI_TYPE_NODE, &shader));
+                     }
                   }
                }
             }
