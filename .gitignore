@@ -26,3 +26,7 @@ debug/
 release/
 *.dblite
 excons.cache
+
+# Others
+mtoasdk*/
+sample/
