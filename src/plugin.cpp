@@ -424,7 +424,7 @@ void NodeInitializer(CAbTranslator context)
       
       if (it->second.isShape)
       {
-         CShapeTranslator::MakeCommonAttributes(procHelper);
+         CScriptedShapeTranslator::MakeCommonAttributes(procHelper);
       }
       
       MString setupAttrsCmd = it->second.setupAttrsCmd + "()";
