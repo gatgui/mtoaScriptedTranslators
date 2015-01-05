@@ -19,7 +19,7 @@ A Maya to Arnold (MtoA) extension to allow export of new node types using python
         with-maya=<path_to_maya_install_dir>
 ```
   
-If maya is installed in its default system location, the 'maya-ver=<target_maya_version>' can be used instead of 'with-maya=...'
+If maya is installed in its default system location, the 'maya-ver=*target_maya_version*' can be used instead of 'with-maya=...'
 
 
 ## Install
@@ -31,9 +31,9 @@ Add the build output folder to your `MAYA_EXTENSIONS_PATH`
 
 When the extension is loaded by MtoA, it will look at the contents of the `MTOA_SCRIPTED_TRANSLATORS` environment variable.
   
-It expects a colon or semicolon separated list of '<node_type>,<plugin_name>' items. If the plugin name matches the node type, it can be omitted.
+It expects a colon or semicolon separated list of '*node_type*,*plugin_name*' items. If the plugin name matches the node type, it can be omitted.
   
-For each found node type, the extension will try to import a python module named 'mtoa_<node_type>'. When it succeeds doing so, it will then look up for a function named 'Export' in the module. Only then will the node type be registered to MtoA.
+For each found node type, the extension will try to import a python module named 'mtoa_*node_type*'. When it succeeds doing so, it will then look up for a function named 'Export' in the module. Only then will the node type be registered to MtoA.
   
 Other functions may be defined to control the behavior of the extension, but only the 'Export' one is required. Follows a full list of recognized functions with their arguments and expected return values:
   
