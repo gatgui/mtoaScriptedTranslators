@@ -115,8 +115,8 @@ float GetSampleFrame(CArnoldSession *session, unsigned int step)
       
       if (mbtype == MTOA_MBLUR_TYPE_CUSTOM)
       {
-         start = opts.findPlug("motion_start").asFloat();
-         end = opts.findPlug("motion_end").asFloat();
+         start -= opts.findPlug("motion_start").asFloat();
+         end += opts.findPlug("motion_end").asFloat();
       }
       else
       {
