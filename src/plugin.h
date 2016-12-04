@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <set>
+#include "common.h"
 #include "extension/Extension.h"
 
 struct CScriptedTranslator

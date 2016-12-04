@@ -97,6 +97,7 @@ MStatus RemovePluginLoadedCallback()
    return status;
 }
 
+#ifdef OLD_API
 float GetSampleFrame(CArnoldSession *session, unsigned int step)
 {
    MFnDependencyNode opts(session->GetArnoldRenderOptions());
@@ -143,6 +144,7 @@ float GetSampleFrame(CArnoldSession *session, unsigned int step)
       return start + step * incr;
    }
 }
+#endif
 
 bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
 {

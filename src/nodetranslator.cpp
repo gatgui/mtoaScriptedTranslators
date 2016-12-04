@@ -15,12 +15,20 @@ CScriptedNodeTranslator::~CScriptedNodeTranslator()
 {
 }
 
+#ifdef OLD_API
 AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, MObject& object, MString outputAttr)
 {
    AtNode *rv = CNodeTranslator::Init(session, object, outputAttr);
    m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
    return rv;
 }
+#else
+void CScriptedNodeTranslator::Init()
+{
+   CNodeTranslator::Init();
+   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
+}
+#endif
 
 AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
 {
@@ -39,30 +47,42 @@ AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
 
 void CScriptedNodeTranslator::Export(AtNode *atNode)
 {
+#ifdef OLD_API
    RunScripts(atNode, 0);
+#else
+   RunScripts(atNode, GetMotionStep());
+#endif
 }
 
+#ifdef OLD_API
 void CScriptedNodeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step);
 }
+#endif
 
 void CScriptedNodeTranslator::Update(AtNode *atNode)
 {
+#ifdef OLD_API
    RunScripts(atNode, 0, true);
+#else
+   RunScripts(atNode, GetMotionStep(), true);
+#endif
 }
 
+#ifdef OLD_API
 void CScriptedNodeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step, true);
 }
+#endif
 
 bool CScriptedNodeTranslator::RequiresMotionData()
 {
    return m_motionBlur;
 }
 
-void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool update)
+void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool /* update */)
 {
    std::map<std::string, CScriptedTranslator>::iterator translatorIt;
    MFnDependencyNode fnNode(GetMayaObject());
@@ -92,7 +112,13 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
    command += buffer;
    command += ", ";
    
+#ifdef OLD_API
    sprintf(buffer, "%f", GetSampleFrame(m_session, step));
+#else
+   unsigned int nsteps = 0;
+   const double *mframes = GetMotionFrames(nsteps);
+   sprintf(buffer, "%f", (step < nsteps ? mframes[step] : GetExportFrame()));
+#endif
    command += buffer;
    
    command += ", \"(" + node.name() + "\", \"";
@@ -120,6 +146,7 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       AiNodeSetBool(atNode, "load_at_init", true);
    }
    
+   // Use IsExportingMotion()?
    if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
    {
       if (cleanupCmd != "")

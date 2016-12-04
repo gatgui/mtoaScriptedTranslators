@@ -2,6 +2,8 @@
 #include "plugin.h"
 
 #include <maya/MBoundingBox.h>
+#include <maya/MSelectionList.h>
+#include <maya/MMatrix.h>
 
 
 void* CScriptedShapeTranslator::creator()
@@ -18,6 +20,7 @@ CScriptedShapeTranslator::~CScriptedShapeTranslator()
 {
 }
 
+#ifdef OLD_API
 AtNode* CScriptedShapeTranslator::Init(CArnoldSession *session, MDagPath& dagPath, MString outputAttr)
 {
    AtNode *rv = CShapeTranslator::Init(session, dagPath, outputAttr);
@@ -31,6 +34,13 @@ AtNode* CScriptedShapeTranslator::Init(CArnoldSession* session, MObject& object,
    m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
    return rv;
 }
+#else
+void CScriptedShapeTranslator::Init()
+{
+   CShapeTranslator::Init();
+   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
+}
+#endif
 
 AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
 {
@@ -52,11 +62,10 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
    if (!IsMasterInstance())
    {
       MDagPath masterPath = GetMasterInstance();
-      
-      CNodeAttrHandle handle(masterPath);
+#ifdef OLD_API
       std::vector<CNodeTranslator*> translators;
+      CNodeAttrHandle handle(masterPath);
       unsigned int n = m_session->GetActiveTranslators(handle, translators);
-      
       for (unsigned int i=0; i<n; ++i)
       {
          m_masterNode = translators[i]->GetArnoldRootNode();
@@ -65,6 +74,13 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
             break;
          }
       }
+#else
+      CNodeTranslator *trsl = CNodeTranslator::GetTranslator(masterPath);
+      if (trsl)
+      {
+         m_masterNode = trsl->GetArnoldNode();
+      }
+#endif
    }
    
    if (!m_masterNode)
@@ -204,23 +220,35 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
 
 void CScriptedShapeTranslator::Export(AtNode *atNode)
 {
+#ifdef OLD_API
    RunScripts(atNode, 0);
+#else
+   RunScripts(atNode, GetMotionStep());
+#endif
 }
 
+#ifdef OLD_API
 void CScriptedShapeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step);
 }
+#endif
 
 void CScriptedShapeTranslator::Update(AtNode *atNode)
 {
+#ifdef OLD_API
    RunScripts(atNode, 0, true);
+#else
+   RunScripts(atNode, GetMotionStep(), true);
+#endif
 }
 
+#ifdef OLD_API
 void CScriptedShapeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step, true);
 }
+#endif
 
 bool CScriptedShapeTranslator::RequiresMotionData()
 {
@@ -262,7 +290,13 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    command += ", ";
    
    // current sample frame
+#ifdef OLD_API
    sprintf(buffer, "%f", GetSampleFrame(m_session, step));
+#else
+   unsigned int nsteps = 0;
+   const double *mframes = GetMotionFrames(nsteps);
+   sprintf(buffer, "%f", (step < nsteps ? mframes[step] : GetExportFrame()));
+#endif
    command += buffer;
    command += ", ";
    
@@ -403,7 +437,14 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       }
    }
    
-   if (step == 0)
+#ifdef OLD_API
+   bool baseExport = (step == 0);
+#else
+   bool baseExport = !IsExportingMotion();
+#endif
+   
+   //if (step == 0)
+   if (baseExport)
    {
       // Set common attributes
       MPlug plug;
@@ -486,7 +527,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   
                   if (camDag.getPath(camPath) == MS::kSuccess)
                   {
+#ifdef OLD_API
                      cameraNode = ExportDagPath(camPath);
+#else
+                     CDagTranslator *trsl = CDagTranslator::ExportDagPath(camPath);
+                     if (trsl)
+                     {
+                        cameraNode = trsl->GetArnoldNode();
+                     }
+#endif
                   }
                }
                
@@ -597,7 +646,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   
                   if (HasParameter(anodeEntry, "disp_map", atNode, "constant ARRAY NODE"))
                   {
+#ifdef OLD_API
                      AtNode *dispImage = ExportNode(shaderConns[0]);
+#else
+                     AtNode *dispImage = ExportConnectedNode(shaderConns[0]);
+#endif
                      AiNodeSetArray(atNode, "disp_map", AiArrayConvert(1, 1, AI_TYPE_NODE, &dispImage));
                   }
                }
@@ -763,6 +816,19 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
       
+      if (attrsSet.find("matte") == attrsEnd)
+      {
+         plug = FindMayaPlug("matte");
+         if (plug.isNull())
+         {
+            plug = FindMayaPlug("aiMatte");
+         }
+         if (!plug.isNull() && HasParameter(anodeEntry, "matte", atNode, "constant BOOL"))
+         {
+            AiNodeSetBool(atNode, "matte", plug.asBool());
+         }
+      }
+      
       if (attrsSet.find("visibility") == attrsEnd)
       {
          if (HasParameter(anodeEntry, "visibility", atNode, "constant BYTE"))
@@ -840,7 +906,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          {
             if (shadingEngine.object() != MObject::kNullObj)
             {
+#ifdef OLD_API
                AtNode *shader = ExportNode(shadingEngine.findPlug("message"));
+#else
+               AtNode *shader = ExportConnectedNode(shadingEngine.findPlug("message"));
+#endif
                if (shader != NULL)
                {
                   const AtNodeEntry *entry = AiNodeGetNodeEntry(shader);
@@ -877,6 +947,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    
    // Call cleanup command on last export step
    
+   // Use IsExportingMotion()?
    if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
    {
       if (HasParameter(anodeEntry, "disp_padding", atNode))
