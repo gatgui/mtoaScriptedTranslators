@@ -16,7 +16,7 @@ CScriptedNodeTranslator::~CScriptedNodeTranslator()
 }
 
 #ifdef OLD_API
-AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, MObject& object, MString outputAttr)
+AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, const MObject& object, const MString &outputAttr)
 {
    AtNode *rv = CNodeTranslator::Init(session, object, outputAttr);
    m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());

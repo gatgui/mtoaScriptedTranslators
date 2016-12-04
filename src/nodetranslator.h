@@ -14,7 +14,7 @@ public:
    
    virtual AtNode* CreateArnoldNodes();
 #ifdef OLD_API
-   virtual AtNode* Init(CArnoldSession* session, MObject &object, MString outputAttr="");
+   virtual AtNode* Init(CArnoldSession* session, const MObject &object, const MString &outputAttr="");
 #else
    virtual void Init();
 #endif
