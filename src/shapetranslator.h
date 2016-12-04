@@ -4,6 +4,7 @@
 #include "common.h"
 #include "translators/shape/ShapeTranslator.h"
 #include "extension/Extension.h"
+#include <set>
 
 class CScriptedShapeTranslator : public CShapeTranslator
 {
@@ -42,6 +43,7 @@ private:
    
    bool m_motionBlur;
    AtNode *m_masterNode;
+   std::set<unsigned int> m_exportedSteps;
 };
 
 #endif

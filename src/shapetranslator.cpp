@@ -946,9 +946,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    }
    
    // Call cleanup command on last export step
+   if (m_exportedSteps.find(step) != m_exportedSteps.end())
+   {
+      char numstr[16];
+      sprintf(numstr, "%u", step);
+      MGlobal::displayWarning(MString("[mtoaScriptedTranslator] Motion step already processed: ") + numstr);
+   }
+   m_exportedSteps.insert(step);
    
-   // Use IsExportingMotion()?
-   if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
+   if (!m_motionBlur || m_exportedSteps.size() == GetNumMotionSteps())
    {
       if (HasParameter(anodeEntry, "disp_padding", atNode))
       {

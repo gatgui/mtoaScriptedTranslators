@@ -4,6 +4,7 @@
 #include "common.h"
 #include "translators/NodeTranslator.h"
 #include "extension/Extension.h"
+#include <set>
 
 class CScriptedNodeTranslator : public CNodeTranslator
 {
@@ -36,6 +37,7 @@ private:
 private:
    
    bool m_motionBlur;
+   std::set<unsigned int> m_exportedSteps;
 };
 
 #endif

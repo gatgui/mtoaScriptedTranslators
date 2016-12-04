@@ -146,8 +146,16 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       AiNodeSetBool(atNode, "load_at_init", true);
    }
    
-   // Use IsExportingMotion()?
-   if (!IsMotionBlurEnabled() || !IsLocalMotionBlurEnabled() || int(step) >= (int(GetNumMotionSteps()) - 1))
+   // Will this method be called more than once for the same motion step?
+   if (m_exportedSteps.find(step) != m_exportedSteps.end())
+   {
+      char numstr[16];
+      sprintf(numstr, "%u", step);
+      MGlobal::displayWarning(MString("[mtoaScriptedTranslator] Motion step already processed: ") + numstr);
+   }
+   m_exportedSteps.insert(step);
+   
+   if (!m_motionBlur || m_exportedSteps.size() == GetNumMotionSteps())
    {
       if (cleanupCmd != "")
       {
