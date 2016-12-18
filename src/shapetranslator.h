@@ -16,20 +16,25 @@ public:
    virtual ~CScriptedShapeTranslator();
    
    virtual AtNode* CreateArnoldNodes();
+   virtual void Export(AtNode* atNode);
+   virtual bool RequiresMotionData();
+
 #ifdef OLD_API
    virtual AtNode* Init(CArnoldSession* session, MDagPath &dagPath, MString outputAttr="");
    virtual AtNode* Init(CArnoldSession* session, MObject &object, MString outputAttr="");
+   virtual void ExportMotion(AtNode* atNode, unsigned int step);
+   virtual void Update(AtNode *atNode);
+   virtual void UpdateMotion(AtNode* atNode, unsigned int step);
+   virtual void Delete();
 #else
    virtual void Init();
+   virtual void ExportMotion(AtNode *atNode);
+   virtual void RequestUpdate();
 #endif
-   virtual void Export(AtNode* atNode);
-   virtual void Update(AtNode *atNode);
-   virtual bool RequiresMotionData();
-   virtual void Delete();
+   
    
 #ifdef OLD_API
-   virtual void ExportMotion(AtNode* atNode, unsigned int step);
-   virtual void UpdateMotion(AtNode* atNode, unsigned int step);
+   
 #endif
    
    static void* creator();

@@ -21,6 +21,7 @@ CScriptedShapeTranslator::~CScriptedShapeTranslator()
 }
 
 #ifdef OLD_API
+
 AtNode* CScriptedShapeTranslator::Init(CArnoldSession *session, MDagPath& dagPath, MString outputAttr)
 {
    AtNode *rv = CShapeTranslator::Init(session, dagPath, outputAttr);
@@ -34,12 +35,59 @@ AtNode* CScriptedShapeTranslator::Init(CArnoldSession* session, MObject& object,
    m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
    return rv;
 }
+
+void CScriptedShapeTranslator::Export(AtNode *atNode)
+{
+   RunScripts(atNode, 0);
+}
+
+void CScriptedShapeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
+{
+   RunScripts(atNode, step);
+}
+
+void CScriptedShapeTranslator::Update(AtNode *atNode)
+{
+   RunScripts(atNode, 0, true);
+}
+
+void CScriptedShapeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
+{
+   RunScripts(atNode, step, true);
+}
+
+void CScriptedShapeTranslator::Delete()
+{
+}
+
 #else
+
 void CScriptedShapeTranslator::Init()
 {
    CShapeTranslator::Init();
    m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
 }
+
+void CScriptedShapeTranslator::Export(AtNode *atNode)
+{
+   if (!IsExported())
+   {
+      m_exportedSteps.clear();
+   }
+   RunScripts(atNode, GetMotionStep(), !IsExported());
+}
+
+void CScriptedShapeTranslator::ExportMotion(AtNode *atNode)
+{
+   RunScripts(atNode, GetMotionStep(), !IsExported());
+}
+
+void CScriptedShapeTranslator::RequestUpdate()
+{
+   SetUpdateMode(AI_RECREATE_NODE);
+   CNodeTranslator::RequestUpdate();
+}
+
 #endif
 
 AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
@@ -217,38 +265,6 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
       }
    }
 }
-
-void CScriptedShapeTranslator::Export(AtNode *atNode)
-{
-#ifdef OLD_API
-   RunScripts(atNode, 0);
-#else
-   RunScripts(atNode, GetMotionStep());
-#endif
-}
-
-#ifdef OLD_API
-void CScriptedShapeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step);
-}
-#endif
-
-void CScriptedShapeTranslator::Update(AtNode *atNode)
-{
-#ifdef OLD_API
-   RunScripts(atNode, 0, true);
-#else
-   RunScripts(atNode, GetMotionStep(), true);
-#endif
-}
-
-#ifdef OLD_API
-void CScriptedShapeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step, true);
-}
-#endif
 
 bool CScriptedShapeTranslator::RequiresMotionData()
 {
@@ -1000,9 +1016,3 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       }
    }
 }
-
-void CScriptedShapeTranslator::Delete()
-{
-}
-
-

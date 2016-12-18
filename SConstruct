@@ -58,6 +58,10 @@ def GetMtoAVersion():
   return ""
 
 prefix = "maya/%s/mtoa-%s" % (maya.Version(nice=True), GetMtoAVersion())
+if maya.Version(asString=False, nice=True) < 2017:
+  print("Don't use c++11")
+else:
+  print("Maya version = %s" % maya.Version(asString=False))
 
 prj = {"name": "scriptedTranslators",
        "type": "dynamicmodule",

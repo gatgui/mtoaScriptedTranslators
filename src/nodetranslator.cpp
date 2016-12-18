@@ -15,21 +15,6 @@ CScriptedNodeTranslator::~CScriptedNodeTranslator()
 {
 }
 
-#ifdef OLD_API
-AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, const MObject& object, const MString &outputAttr)
-{
-   AtNode *rv = CNodeTranslator::Init(session, object, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-#else
-void CScriptedNodeTranslator::Init()
-{
-   CNodeTranslator::Init();
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-}
-#endif
-
 AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
 {
    std::map<std::string, CScriptedTranslator>::iterator translatorIt;
@@ -45,36 +30,67 @@ AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
    return AddArnoldNode("procedural");
 }
 
-void CScriptedNodeTranslator::Export(AtNode *atNode)
-{
 #ifdef OLD_API
-   RunScripts(atNode, 0);
-#else
-   RunScripts(atNode, GetMotionStep());
-#endif
+
+AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, const MObject& object, const MString &outputAttr)
+{
+   AtNode *rv = CNodeTranslator::Init(session, object, outputAttr);
+   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
+   return rv;
 }
 
-#ifdef OLD_API
+void CScriptedNodeTranslator::Export(AtNode *atNode)
+{
+   RunScripts(atNode, 0);
+}
+
 void CScriptedNodeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step);
 }
-#endif
 
 void CScriptedNodeTranslator::Update(AtNode *atNode)
 {
-#ifdef OLD_API
    RunScripts(atNode, 0, true);
-#else
-   RunScripts(atNode, GetMotionStep(), true);
-#endif
 }
 
-#ifdef OLD_API
 void CScriptedNodeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
 {
    RunScripts(atNode, step, true);
 }
+
+void CScriptedNodeTranslator::Delete()
+{
+}
+
+#else
+
+void CScriptedNodeTranslator::Init()
+{
+   CNodeTranslator::Init();
+   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
+}
+
+void CScriptedNodeTranslator::Export(AtNode *atNode)
+{
+   if (!IsExported())
+   {
+      m_exportedSteps.clear();
+   }
+   RunScripts(atNode, GetMotionStep(), IsExported());
+}
+
+void CScriptedNodeTranslator::ExportMotion(AtNode *atNode)
+{
+   RunScripts(atNode, GetMotionStep(), IsExported());
+}
+
+void CScriptedNodeTranslator::RequestUpdate()
+{
+   SetUpdateMode(AI_RECREATE_NODE);
+   CNodeTranslator::RequestUpdate();
+}
+
 #endif
 
 bool CScriptedNodeTranslator::RequiresMotionData()
@@ -172,9 +188,3 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       }
    }
 }
-
-void CScriptedNodeTranslator::Delete()
-{
-}
-
-
