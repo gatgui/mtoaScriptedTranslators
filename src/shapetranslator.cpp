@@ -70,10 +70,6 @@ void CScriptedShapeTranslator::Init()
 
 void CScriptedShapeTranslator::Export(AtNode *atNode)
 {
-   if (!IsExported())
-   {
-      m_exportedSteps.clear();
-   }
    RunScripts(atNode, GetMotionStep(), IsExported());
 }
 
@@ -362,17 +358,25 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    bool outputDispHeight = false;
    bool outputDispZeroValue = false;
    bool outputDispAutobump = false;
-   
+#ifdef OLD_API
+   bool exportShaders = true;
+#else
+   bool exportShaders = RequiresShaderExport();
+#endif
+
    const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
    
-   GetShapeInstanceShader(m_dagPath, shadingEngine);
-   if (!IsMasterInstance())
+   if (exportShaders)
    {
-      GetShapeInstanceShader(GetMasterInstance(), masterShadingEngine);
-   }
-   else
-   {
-      masterShadingEngine.setObject(shadingEngine.object());
+      GetShapeInstanceShader(m_dagPath, shadingEngine);
+      if (!IsMasterInstance())
+      {
+         GetShapeInstanceShader(GetMasterInstance(), masterShadingEngine);
+      }
+      else
+      {
+         masterShadingEngine.setObject(shadingEngine.object());
+      }
    }
    
    AtMatrix matrix;
@@ -452,19 +456,18 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
    }
-   
+
 #ifdef OLD_API
-   bool baseExport = (step == 0);
+   if (step == 0)
 #else
-   bool baseExport = !IsExportingMotion();
+   if (!IsExportingMotion())
 #endif
-   
-   //if (step == 0)
-   if (baseExport)
    {
       // Set common attributes
       MPlug plug;
-      
+
+      m_exportedSteps.clear();
+
       if (AiNodeIs(atNode, "procedural"))
       {
          // Note: it is up to the procedural to properly forward (or not) those parameters to the node
@@ -546,7 +549,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
 #ifdef OLD_API
                      cameraNode = ExportDagPath(camPath);
 #else
-                     CDagTranslator *trsl = CDagTranslator::ExportDagPath(camPath);
+                     CDagTranslator *trsl = CShapeTranslator::ExportDagPath(camPath);
                      if (trsl)
                      {
                         cameraNode = trsl->GetArnoldNode();
@@ -632,7 +635,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
          
          // Set diplacement shader
-         if (attrsSet.find("disp_map") == attrsEnd)
+         if (exportShaders && attrsSet.find("disp_map") == attrsEnd)
          {
             if (masterShadingEngine.object() != MObject::kNullObj)
             {
@@ -916,7 +919,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       }
       
       // Set surface shader
-      if (HasParameter(anodeEntry, "shader", atNode, "constant NODE"))
+      if (exportShaders && HasParameter(anodeEntry, "shader", atNode, "constant NODE"))
       {
          if (attrsSet.find("shader") == attrsEnd)
          {
@@ -961,7 +964,6 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       ExportTraceSets(atNode, plug);
    }
    
-   // Call cleanup command on last export step
    if (m_exportedSteps.find(step) != m_exportedSteps.end())
    {
       char numstr[16];
@@ -970,6 +972,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    }
    m_exportedSteps.insert(step);
    
+   // Call cleanup command on last export step
    if (!m_motionBlur || m_exportedSteps.size() == GetNumMotionSteps())
    {
       if (HasParameter(anodeEntry, "disp_padding", atNode))

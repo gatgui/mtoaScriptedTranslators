@@ -73,10 +73,6 @@ void CScriptedNodeTranslator::Init()
 
 void CScriptedNodeTranslator::Export(AtNode *atNode)
 {
-   if (!IsExported())
-   {
-      m_exportedSteps.clear();
-   }
    RunScripts(atNode, GetMotionStep(), IsExported());
 }
 
@@ -161,8 +157,12 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       // Either min or max is missing, force load_at_init
       AiNodeSetBool(atNode, "load_at_init", true);
    }
-   
-   // Will this method be called more than once for the same motion step?
+
+   if (!IsExportingMotion())
+   {
+      m_exportedSteps.clear();
+   }
+
    if (m_exportedSteps.find(step) != m_exportedSteps.end())
    {
       char numstr[16];
