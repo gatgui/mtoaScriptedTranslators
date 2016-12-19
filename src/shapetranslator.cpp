@@ -85,7 +85,7 @@ void CScriptedShapeTranslator::ExportMotion(AtNode *atNode)
 void CScriptedShapeTranslator::RequestUpdate()
 {
    SetUpdateMode(AI_RECREATE_NODE);
-   CNodeTranslator::RequestUpdate();
+   CShapeTranslator::RequestUpdate();
 }
 
 #endif
