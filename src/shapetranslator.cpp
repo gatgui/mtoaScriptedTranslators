@@ -74,12 +74,12 @@ void CScriptedShapeTranslator::Export(AtNode *atNode)
    {
       m_exportedSteps.clear();
    }
-   RunScripts(atNode, GetMotionStep(), !IsExported());
+   RunScripts(atNode, GetMotionStep(), IsExported());
 }
 
 void CScriptedShapeTranslator::ExportMotion(AtNode *atNode)
 {
-   RunScripts(atNode, GetMotionStep(), !IsExported());
+   RunScripts(atNode, GetMotionStep(), IsExported());
 }
 
 void CScriptedShapeTranslator::RequestUpdate()
