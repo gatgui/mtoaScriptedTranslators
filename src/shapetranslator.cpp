@@ -6,14 +6,6 @@
 #include <maya/MMatrix.h>
 
 
-#if AI_VERSION_ARCH_NUM >= 5
-#define AtPoint AtVector
-#define AiNodeGetPnt AiNodeGetVec
-#define AiNodeSetPnt AiNodeSetVec
-#define MAX AiMax
-#endif
-
-
 void* CScriptedShapeTranslator::creator()
 {
    return new CScriptedShapeTranslator();
@@ -430,15 +422,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             MPoint bmin = bbox.min();
             MPoint bmax = bbox.max();
             
-            AiNodeSetPnt(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
-            AiNodeSetPnt(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
+            SET_POINT(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
+            SET_POINT(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
          }
          else
          {
             if (transformBlur || deformBlur)
             {
-               AtPoint cmin = AiNodeGetPnt(atNode, "min");
-               AtPoint cmax = AiNodeGetPnt(atNode, "max");
+               GET_POINT(cmin, atNode, "min");
+               GET_POINT(cmax, atNode, "max");
                
                MBoundingBox bbox = node.boundingBox();
                
@@ -458,8 +450,8 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                if (bmax.z > cmax.z)
                   cmax.z = static_cast<float>(bmax.z);
                
-               AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
-               AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
+               SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
+               SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
             }
          }
       }
@@ -638,7 +630,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             if (!plug.isNull())
             {
                outputDispPadding = true;
-               dispPadding = MAX(dispPadding, plug.asFloat());
+               dispPadding = AiMax(dispPadding, plug.asFloat());
             }
          }
          
@@ -661,7 +653,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   if (!plug.isNull())
                   {
                      outputDispPadding = true;
-                     dispPadding = MAX(dispPadding, plug.asFloat());
+                     dispPadding = AiMax(dispPadding, plug.asFloat());
                   }
                   
                   plug = dispNode.findPlug("aiDisplacementAutoBump");
@@ -1012,8 +1004,8 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       {
          float padding = AiNodeGetFlt(atNode, "disp_padding");
          
-         AtPoint cmin = AiNodeGetPnt(atNode, "min");
-         AtPoint cmax = AiNodeGetPnt(atNode, "max");
+         GET_POINT(cmin, atNode, "min");
+         GET_POINT(cmax, atNode, "max");
          
          cmin.x -= padding;
          cmin.y -= padding;
@@ -1022,8 +1014,8 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          cmax.y += padding;
          cmax.z += padding;
          
-         AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
-         AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
+         SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
+         SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
       }
       
       if (cleanupCmd != "")

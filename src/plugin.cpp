@@ -146,7 +146,6 @@ float GetSampleFrame(CArnoldSession *session, unsigned int step)
 }
 #endif
 
-#if AI_VERSION_ARCH_NUM < 5
 bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
 {
    if (data.isArray)
@@ -174,240 +173,6 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
          values.push_back(eval);
       }
       
-      val->ARRAY = AiArrayAllocate(values.size(), 1, data.type);
-      for (size_t i=0; i<values.size(); ++i)
-      {
-         switch (data.type)
-         {
-         case AI_TYPE_BOOLEAN:
-            AiArraySetBool(val->ARRAY, i, values[i].BOOL);
-            break;
-         case AI_TYPE_BYTE:
-            AiArraySetByte(val->ARRAY, i, values[i].BYTE);
-            break;
-         case AI_TYPE_INT:
-            AiArraySetInt(val->ARRAY, i, values[i].INT);
-            break;
-         case AI_TYPE_UINT:
-            AiArraySetUInt(val->ARRAY, i, values[i].UINT);
-            break;
-         case AI_TYPE_ENUM:
-            AiArraySetInt(val->ARRAY, i, values[i].INT);
-            break;
-         case AI_TYPE_FLOAT:
-            AiArraySetFlt(val->ARRAY, i, values[i].FLT);
-            break;
-         case AI_TYPE_POINT2:
-            AiArraySetPnt2(val->ARRAY, i, values[i].PNT2);
-            break;
-         case AI_TYPE_POINT:
-            AiArraySetPnt(val->ARRAY, i, values[i].PNT);
-            break;
-         case AI_TYPE_VECTOR:
-            AiArraySetVec(val->ARRAY, i, values[i].VEC);
-            break;
-         case AI_TYPE_RGB:
-            AiArraySetRGB(val->ARRAY, i, values[i].RGB);
-            break;
-         case AI_TYPE_RGBA:
-            AiArraySetRGBA(val->ARRAY, i, values[i].RGBA);
-            break;
-         case AI_TYPE_MATRIX:
-            AiArraySetMtx(val->ARRAY, i, *(values[i].pMTX));
-            break;
-         case AI_TYPE_STRING:
-            AiArraySetStr(val->ARRAY, i, values[i].STR);
-            break;
-         case AI_TYPE_NODE:
-            AiArraySetPtr(val->ARRAY, i, NULL);
-            break;
-         default:
-            break;
-         }
-         DestroyValue(data, &(values[i]));
-      }
-      
-      data.isArray = true;
-      
-      return true;
-   }
-   else
-   {
-      switch (data.type)
-      {
-      case AI_TYPE_BOOLEAN:
-         if (sval == "1" || sval == "on" || sval == "true" || sval == "True")
-         {
-            val->BOOL = true;
-            return true;
-         }
-         else if (sval == "0" || sval == "off" || sval == "false" || sval == "False")
-         {
-            val->BOOL = false;
-            return true;
-         }
-         else if (sval != "")
-         {
-            return false;
-         }
-      case AI_TYPE_BYTE:
-         if (sscanf(sval.c_str(), "%c", &(val->BYTE)) != 1)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_INT:
-         if (sscanf(sval.c_str(), "%d", &(val->INT)) != 1)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_UINT:
-         if (sscanf(sval.c_str(), "%u", &(val->UINT)) != 1)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_ENUM:
-         for (unsigned int i=0; i<data.enums.length(); ++i)
-         {
-            if (!strcmp(sval.c_str(), data.enums[i].asChar()))
-            {
-               val->INT = (int) i;
-               return true;
-            }
-         }
-         {
-            unsigned int index = 0;
-            if (sscanf(sval.c_str(), "%u", &index) == 1 && index < data.enums.length())
-            {
-               val->INT = index;
-               return true;
-            }
-         }
-         return false;
-      case AI_TYPE_FLOAT:
-         if (sscanf(sval.c_str(), "%f", &(val->FLT)) != 1)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_POINT2:
-         if (sscanf(sval.c_str(), "%f,%f",
-                    &(val->PNT2.x), &(val->PNT2.y)) != 2)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_POINT:
-         if (sscanf(sval.c_str(), "%f,%f,%f",
-                    &(val->PNT.x), &(val->PNT.y), &(val->PNT.z)) != 3)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_VECTOR:
-         if (sscanf(sval.c_str(), "%f,%f,%f",
-                    &(val->VEC.x), &(val->VEC.y), &(val->VEC.z)) != 3)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_RGB:
-         if (sscanf(sval.c_str(), "%f,%f,%f",
-                    &(val->RGB.r), &(val->RGB.g), &(val->RGB.b)) != 3)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_RGBA:
-         if (sscanf(sval.c_str(), "%f,%f,%f,%f",
-                    &(val->RGBA.r), &(val->RGBA.g), &(val->RGBA.b), &(val->RGBA.a)) != 4)
-         {
-            return false;
-         }
-         return true;
-      case AI_TYPE_MATRIX:
-         {
-            AtMatrix *mat = (AtMatrix*) malloc(sizeof(AtMatrix));
-            if (sscanf(sval.c_str(), "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                       &((*mat)[0][0]), &((*mat)[0][1]), &((*mat)[0][2]), &((*mat)[0][3]),
-                       &((*mat)[1][0]), &((*mat)[1][1]), &((*mat)[1][2]), &((*mat)[1][3]),
-                       &((*mat)[2][0]), &((*mat)[2][1]), &((*mat)[2][2]), &((*mat)[2][3]),
-                       &((*mat)[3][0]), &((*mat)[3][1]), &((*mat)[3][2]), &((*mat)[3][3])) != 16)
-            {
-               free(mat);
-               return false;
-            }
-            val->pMTX = mat;
-         }
-         return true;
-      case AI_TYPE_STRING:
-         {  
-            char *tmp = new char[sval.length()+1];
-            strcpy(tmp, sval.c_str());
-            val->STR = tmp;
-         }
-         return true;
-      case AI_TYPE_NODE:
-         val->PTR = NULL; 
-         return true;
-      default:
-         return false;
-      }
-   }
-}
-
-void DestroyValue(CAttrData &data, AtParamValue *val)
-{
-   if (data.isArray)
-   {
-      AiArrayDestroy(val->ARRAY);
-   }
-   else
-   {
-      switch (data.type)
-      {
-      case AI_TYPE_STRING:
-         delete[] val->STR;
-         break;
-      case AI_TYPE_MATRIX:
-         free(val->pMTX);
-         break;
-      default:
-         break;
-      }
-   }
-}
-
-#else
-bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
-{
-   if (data.isArray)
-   {
-      // Temporarily reset isArray so we can call StringToValue for each element
-      data.isArray = false;
-
-      std::string elt;
-      std::vector<AtParamValue> values;
-      AtParamValue eval;
-      size_t p0 = 0, p1 = sval.find(';', p0);
-      while (p1 != std::string::npos)
-      {
-         elt = sval.substr(p0, p1-p0);
-         if (StringToValue(elt, data, &eval))
-         {
-            values.push_back(eval);
-         }
-         p0 = p1 + 1;
-         p1 = sval.find(';', p0);
-      }
-      elt = sval.substr(p0);
-      if (StringToValue(elt, data, &eval))
-      {
-         values.push_back(eval);
-      }
-
       val->ARRAY() = AiArrayAllocate(values.size(), 1, data.type);
       for (size_t i=0; i<values.size(); ++i)
       {
@@ -434,6 +199,11 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
          case AI_TYPE_VECTOR2:
             AiArraySetVec2(val->ARRAY(), i, values[i].VEC2());
             break;
+         #if AI_VERSION_ARCH_NUM < 5
+         case AI_TYPE_POINT:
+            AiArraySetPnt(val->ARRAY(), i, values[i].PNT);
+            break;
+         #endif // AI_VERSION_ARCH_NUM < 5
          case AI_TYPE_VECTOR:
             AiArraySetVec(val->ARRAY(), i, values[i].VEC());
             break;
@@ -530,6 +300,15 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
             return false;
          }
          return true;
+      #if AI_VERSION_ARCH_NUM < 5
+      case AI_TYPE_POINT:
+         if (sscanf(sval.c_str(), "%f,%f,%f",
+                    &(val->PNT.x), &(val->PNT.y), &(val->PNT.z)) != 3)
+         {
+            return false;
+         }
+         return true;
+      #endif // AI_VERSION_ARCH_NUM < 5
       case AI_TYPE_VECTOR:
          if (sscanf(sval.c_str(), "%f,%f,%f",
                     &(val->VEC().x), &(val->VEC().y), &(val->VEC().z)) != 3)
@@ -603,8 +382,6 @@ void DestroyValue(CAttrData &data, AtParamValue *val)
       }
    }
 }
-
-#endif // AI_VERSION_ARCH_NUM < 5
 
 bool HasParameter(const AtNodeEntry *anodeEntry, const char *param, AtNode *anode, const char *decl)
 {
