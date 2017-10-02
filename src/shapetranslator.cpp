@@ -135,7 +135,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode("procedural");
+         return AddArnoldNode("pyproc");
       }
    }
    else
@@ -146,7 +146,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : "procedural");
+         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : "pyproc");
       }
    }
 }
@@ -409,6 +409,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       }
    }
    
+   #if AI_VERSION_ARCH_NUM < 5
    // Set bounding box
    if (attrsSet.find("min") == attrsEnd && attrsSet.find("max") == attrsEnd)
    {
@@ -456,6 +457,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
    }
+   #endif // AI_VERSION_ARCH_NUM < 5
 
 #ifdef OLD_API
    if (step == 0)
@@ -776,6 +778,26 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetFlt(atNode, "step_size", plug.asFloat());
             }
          }
+
+         #if AI_VERSION_ARCH_NUM >= 5
+         if (attrsSet.find("volume_padding") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiVolumePadding");
+            if (!plug.isNull() && HasParameter(anodeEntry, "volume_padding", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "volume_padding", plug.asFloat());
+            }
+         }
+
+         if (attrsSet.find("bounds_slack") == attrsEnd)
+         {
+            plug = FindMayaPlug("aiBoundsSlack");
+            if (!plug.isNull() && HasParameter(anodeEntry, "bounds_slack", atNode, "constant FLOAT"))
+            {
+               AiNodeSetFlt(atNode, "bounds_slack", plug.asFloat());
+            }
+         }
+         #endif // AI_VERSION_ARCH_NUM >= 5
       }
       
       if (attrsSet.find("sidedness") == attrsEnd)

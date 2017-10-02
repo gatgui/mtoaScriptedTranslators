@@ -27,7 +27,7 @@ AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
       return NULL;
    }
 
-   return AddArnoldNode("procedural");
+   return AddArnoldNode("pyproc");
 }
 
 #ifdef OLD_API
@@ -151,12 +151,14 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       attrsSet.insert(attrs[i].asChar());
    }
    std::set<std::string>::iterator attrsEnd = attrsSet.end();
-   
+
+   #if AI_VERSION_ARCH_NUM < 5
    if (attrsSet.find("min") == attrsEnd || attrsSet.find("max") == attrsEnd)
    {
       // Either min or max is missing, force load_at_init
       AiNodeSetBool(atNode, "load_at_init", true);
    }
+   #endif // AI_VERSION_ARCH_NUM < 5
 
    if (!IsExportingMotion())
    {
