@@ -6,6 +6,14 @@
 #include <maya/MMatrix.h>
 
 
+#if AI_VERSION_ARCH_NUM >= 5
+#define AtPoint AtVector
+#define AiNodeGetPnt AiNodeGetVec
+#define AiNodeSetPnt AiNodeSetVec
+#define MAX AiMax
+#endif
+
+
 void* CScriptedShapeTranslator::creator()
 {
    return new CScriptedShapeTranslator();
@@ -468,7 +476,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
 
       m_exportedSteps.clear();
 
-      if (AiNodeIs(atNode, "procedural"))
+      if (AiNodeIs(atNode, (AtString)"procedural"))
       {
          // Note: it is up to the procedural to properly forward (or not) those parameters to the node
          //       it creates
@@ -749,7 +757,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
       
-      if (AiNodeIs(atNode, "ginstance"))
+      if (AiNodeIs(atNode, (AtString)"ginstance"))
       {
          if (attrsSet.find("node") == attrsEnd)
          {
@@ -868,20 +876,21 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                visibility &= ~AI_RAY_CAMERA;
             }
             
+            #if AI_VERSION_ARCH_NUM < 5
             // Use maya shape built-in attribute
             plug = FindMayaPlug("visibleInReflections");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_REFLECTED;
             }
-            
+
             // Use maya shape built-in attribute
             plug = FindMayaPlug("visibleInRefractions");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_REFRACTED;
             }
-            
+
             plug = FindMayaPlug("diffuse_visibility");
             if (plug.isNull())
             {
@@ -891,7 +900,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             {
                visibility &= ~AI_RAY_DIFFUSE;
             }
-            
+
             plug = FindMayaPlug("glossy_visibility");
             if (plug.isNull())
             {
@@ -901,6 +910,30 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             {
                visibility &= ~AI_RAY_GLOSSY;
             }
+
+            #else
+            plug = FindMayaPlug("aiVisibleInDiffuseReflection");
+            if (!plug.isNull() && !plug.asBool())
+            {
+               visibility &= ~AI_RAY_DIFFUSE_REFLECT;
+            }
+            plug = FindMayaPlug("aiVisibleInSpecularReflection");
+            if (!plug.isNull() && !plug.asBool())
+            {
+               visibility &= ~AI_RAY_SPECULAR_REFLECT;
+            }
+            plug = FindMayaPlug("aiVisibleInDiffuseTransmission");
+            if (!plug.isNull() && !plug.asBool())
+            {
+               visibility &= ~AI_RAY_DIFFUSE_TRANSMIT;
+            }
+            plug = FindMayaPlug("aiVisibleInSpecularTransmission");
+            if (!plug.isNull() && !plug.asBool())
+            {
+               visibility &= ~AI_RAY_SPECULAR_TRANSMIT;
+            }
+
+            #endif // AI_VERSION_ARCH_NUM < 5
             
             AiNodeSetByte(atNode, "visibility", visibility & 0xFF);
          }
