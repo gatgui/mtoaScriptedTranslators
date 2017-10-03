@@ -1,7 +1,6 @@
 import os
 import re
 import sys
-import glob
 import excons
 from excons.tools import arnold
 from excons.tools import maya
@@ -83,11 +82,17 @@ prj = {"name": "scriptedTranslators",
        "prefix": prefix,
        "ext": ext,
        "defs": defs,
-       "srcs": glob.glob("src/*.cpp"),
+       "srcs": excons.glob("src/*.cpp"),
        "incdirs": [mtoa_inc],
        "libdirs": [mtoa_lib],
        "libs": ["mtoa_api"],
-       "install": {"maya/python": glob.glob("python/*.py")},
+       "install": {"maya/python": excons.glob("python/*.py")},
        "custom": [arnold.Require, maya.Require]}
 
-excons.DeclareTargets(env, [prj])
+targets = excons.DeclareTargets(env, [prj])
+targets["scripts"] = excons.glob("python/*.py")
+
+excons.EcosystemDist(env, "scriptedTranslators.env", {"scriptedTranslators": prefix.replace("maya", ""),
+                                                      "scripts": "/python"}, targets=targets)
+
+Default(["scriptedTranslators"])
