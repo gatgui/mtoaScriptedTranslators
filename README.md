@@ -24,7 +24,7 @@ If maya is installed in its default system location, the 'maya-ver=*target_maya_
 
 ## Install
 
-Add the build output folder to your `MAYA_EXTENSIONS_PATH`
+Add the build output folder to your `MTOA_EXTENSIONS_PATH`
 
 
 ## Usage
