@@ -19,6 +19,7 @@ _fps = {
 
 _verexp = re.compile(r"(\d+)\.(\d+).(\d+)")
 
+_arnold5 = (int(arnold.AiGetVersion()[0]) >= 5)
 
 def GetMtoAVersion():
     global _verexp
@@ -165,9 +166,8 @@ def GetTransformationBlur(nodeName):
 class AttrData(object):
     TrueValues = ["1", "on", "true", "True"]
     FalseValues = ["0", "off", "false", "False"]
-    ListTypes = [arnold.AI_TYPE_POINT2, arnold.AI_TYPE_POINT, arnold.AI_TYPE_VECTOR,
-                 arnold.AI_TYPE_RGB, arnold.AI_TYPE_RGBA,
-                 arnold.AI_TYPE_MATRIX]
+    ListTypes = [arnold.AI_TYPE_VECTOR, arnold.AI_TYPE_RGB, arnold.AI_TYPE_RGBA, arnold.AI_TYPE_MATRIX] +
+                 ([arnold.AI_TYPE_POINT2, arnold.AI_TYPE_POINT] if not _arnold5 else [arnold.AI_TYPE_VECTOR2])
     
     def __init__(self, **kwargs):
         super(AttrData, self).__init__()
