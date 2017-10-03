@@ -14,6 +14,7 @@ struct CScriptedTranslator
    MString setupAECmd;
    MString setupAttrsCmd;
    MString requiredPlugin;
+   AtString arnoldType;
    bool isShape;
    bool supportInstances;
    bool supportVolumes;

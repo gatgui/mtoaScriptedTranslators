@@ -57,8 +57,23 @@ def GetMtoAVersion():
       return "%d.%d" % (arch, major)
   return ""
 
-prefix = "maya/%s/mtoa-%s" % (maya.Version(nice=True), GetMtoAVersion())
-if maya.Version(asString=False, nice=True) < 2017:
+maya_ver = maya.Version(asString=False, nice=True)
+if maya_ver < 2015:
+  print("Maya 2015 at least is required")
+  sys.exit(1)
+
+arnold_ver = arnold.Version(asString=False)
+if arnold_ver[0] < 4 or (arnold_ver[0] == 4 and (arnold_ver[1] < 2 or (arnold_ver[1] == 2 and arnold_ver[2] < 12))):
+  print("Arnold 4.2.12.0 at least is required")
+  sys.exit(1)
+
+mtoa_ver = GetMtoAVersion()
+if float(mtoa_ver) <= 1.3:
+  print("MtoA 1.4 at least is required.")
+  sys.exit(1)
+
+prefix = "maya/%s/mtoa-%s" % (maya.Version(nice=True), mtoa_ver)
+if maya_ver < 2017:
   print("Don't use c++11")
 else:
   print("Maya version = %s" % maya.Version(asString=False))

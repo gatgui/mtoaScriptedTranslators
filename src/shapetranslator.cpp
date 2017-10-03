@@ -20,48 +20,6 @@ CScriptedShapeTranslator::~CScriptedShapeTranslator()
 {
 }
 
-#ifdef OLD_API
-
-AtNode* CScriptedShapeTranslator::Init(CArnoldSession *session, MDagPath& dagPath, MString outputAttr)
-{
-   AtNode *rv = CShapeTranslator::Init(session, dagPath, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-
-AtNode* CScriptedShapeTranslator::Init(CArnoldSession* session, MObject& object, MString outputAttr)
-{
-   AtNode *rv = CDagTranslator::Init(session, object, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-
-void CScriptedShapeTranslator::Export(AtNode *atNode)
-{
-   RunScripts(atNode, 0);
-}
-
-void CScriptedShapeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step);
-}
-
-void CScriptedShapeTranslator::Update(AtNode *atNode)
-{
-   RunScripts(atNode, 0, true);
-}
-
-void CScriptedShapeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step, true);
-}
-
-void CScriptedShapeTranslator::Delete()
-{
-}
-
-#else
-
 void CScriptedShapeTranslator::Init()
 {
    CShapeTranslator::Init();
@@ -84,8 +42,6 @@ void CScriptedShapeTranslator::RequestUpdate()
    CShapeTranslator::RequestUpdate();
 }
 
-#endif
-
 AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
 {
    std::map<std::string, CScriptedTranslator>::iterator translatorIt;
@@ -106,25 +62,11 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
    if (!IsMasterInstance())
    {
       MDagPath masterPath = GetMasterInstance();
-#ifdef OLD_API
-      std::vector<CNodeTranslator*> translators;
-      CNodeAttrHandle handle(masterPath);
-      unsigned int n = m_session->GetActiveTranslators(handle, translators);
-      for (unsigned int i=0; i<n; ++i)
-      {
-         m_masterNode = translators[i]->GetArnoldRootNode();
-         if (m_masterNode)
-         {
-            break;
-         }
-      }
-#else
       CNodeTranslator *trsl = CNodeTranslator::GetTranslator(masterPath);
       if (trsl)
       {
          m_masterNode = trsl->GetArnoldNode();
       }
-#endif
    }
    
    if (!m_masterNode)
@@ -135,7 +77,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode("pyproc");
+         return AddArnoldNode(translatorIt->second.arnoldType);
       }
    }
    else
@@ -146,7 +88,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : "pyproc");
+         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : translatorIt->second.arnoldType.c_str());
       }
    }
 }
@@ -302,13 +244,9 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    command += ", ";
    
    // current sample frame
-#ifdef OLD_API
-   sprintf(buffer, "%f", GetSampleFrame(m_session, step));
-#else
    unsigned int nsteps = 0;
    const double *mframes = GetMotionFrames(nsteps);
    sprintf(buffer, "%f", (step < nsteps ? mframes[step] : GetExportFrame()));
-#endif
    command += buffer;
    command += ", ";
    
@@ -358,11 +296,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    bool outputDispHeight = false;
    bool outputDispZeroValue = false;
    bool outputDispAutobump = false;
-#ifdef OLD_API
-   bool exportShaders = true;
-#else
    bool exportShaders = RequiresShaderExport();
-#endif
 
    const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
    
@@ -423,15 +357,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             MPoint bmin = bbox.min();
             MPoint bmax = bbox.max();
             
-            SET_POINT(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
-            SET_POINT(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
+            AiNodeSetPnt(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
+            AiNodeSetPnt(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
          }
          else
          {
             if (transformBlur || deformBlur)
             {
-               GET_POINT(cmin, atNode, "min");
-               GET_POINT(cmax, atNode, "max");
+               AtPoint cmin = AiNodeGetPnt(atNode, "min");
+               AtPoint cmax = AiNodeGetPnt(atNode, "max");
                
                MBoundingBox bbox = node.boundingBox();
                
@@ -451,26 +385,22 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                if (bmax.z > cmax.z)
                   cmax.z = static_cast<float>(bmax.z);
                
-               SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
-               SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
+               AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+               AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
             }
          }
       }
    }
    #endif // AI_VERSION_ARCH_NUM < 5
 
-#ifdef OLD_API
-   if (step == 0)
-#else
    if (!IsExportingMotion())
-#endif
    {
       // Set common attributes
       MPlug plug;
 
       m_exportedSteps.clear();
 
-      if (AiNodeIs(atNode, (AtString)"procedural"))
+      if (AiNodeIs(atNode, translatorIt->second.arnoldType))
       {
          // Note: it is up to the procedural to properly forward (or not) those parameters to the node
          //       it creates
@@ -548,15 +478,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   
                   if (camDag.getPath(camPath) == MS::kSuccess)
                   {
-#ifdef OLD_API
-                     cameraNode = ExportDagPath(camPath);
-#else
                      CDagTranslator *trsl = CShapeTranslator::ExportDagPath(camPath);
                      if (trsl)
                      {
                         cameraNode = trsl->GetArnoldNode();
                      }
-#endif
                   }
                }
                
@@ -667,11 +593,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   
                   if (HasParameter(anodeEntry, "disp_map", atNode, "constant ARRAY NODE"))
                   {
-#ifdef OLD_API
-                     AtNode *dispImage = ExportNode(shaderConns[0]);
-#else
                      AtNode *dispImage = ExportConnectedNode(shaderConns[0]);
-#endif
                      AiNodeSetArray(atNode, "disp_map", AiArrayConvert(1, 1, AI_TYPE_NODE, &dispImage));
                   }
                }
@@ -750,8 +672,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
          }
       }
-      
-      if (AiNodeIs(atNode, (AtString)"ginstance"))
+      else if (AiNodeIs(atNode, (AtString)"ginstance"))
       {
          if (attrsSet.find("node") == attrsEnd)
          {
@@ -870,6 +791,27 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
       
+      #if AI_VERSION_ARCH_NUM >= 5
+      if (RequiresMotionData())
+      {
+         bool setMStart = (attrsSet.find("motion_start") == attrsEnd);
+         bool setMEnd = (attrsSet.find("motion_end") == attrsEnd);
+         if (setMStart || setMEnd)
+         {
+            double mstart, mend;
+            GetSessionOptions().GetMotionRange(mstart, mend);
+            if (setMStart && HasParameter(anodeEntry, "motion_start"))
+            {
+               AiNodeSetFlt(atNode, "motion_start", (float)mstart);
+            }
+            if (setMEnd && HasParameter(anodeEntry, "motion_end"))
+            {
+               AiNodeSetFlt(atNode, "motion_end", (float)mend);
+            }
+         }
+      }
+      #endif
+
       if (attrsSet.find("visibility") == attrsEnd)
       {
          if (HasParameter(anodeEntry, "visibility", atNode, "constant BYTE"))
@@ -891,6 +833,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
             
             #if AI_VERSION_ARCH_NUM < 5
+
             // Use maya shape built-in attribute
             plug = FindMayaPlug("visibleInReflections");
             if (!plug.isNull() && !plug.asBool())
@@ -926,21 +869,25 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
 
             #else
+
             plug = FindMayaPlug("aiVisibleInDiffuseReflection");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_DIFFUSE_REFLECT;
             }
+
             plug = FindMayaPlug("aiVisibleInSpecularReflection");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_SPECULAR_REFLECT;
             }
+
             plug = FindMayaPlug("aiVisibleInDiffuseTransmission");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_DIFFUSE_TRANSMIT;
             }
+
             plug = FindMayaPlug("aiVisibleInSpecularTransmission");
             if (!plug.isNull() && !plug.asBool())
             {
@@ -972,11 +919,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          {
             if (shadingEngine.object() != MObject::kNullObj)
             {
-#ifdef OLD_API
-               AtNode *shader = ExportNode(shadingEngine.findPlug("message"));
-#else
                AtNode *shader = ExportConnectedNode(shadingEngine.findPlug("message"));
-#endif
                if (shader != NULL)
                {
                   const AtNodeEntry *entry = AiNodeGetNodeEntry(shader);
@@ -1022,12 +965,13 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    // Call cleanup command on last export step
    if (!m_motionBlur || m_exportedSteps.size() == GetNumMotionSteps())
    {
+      #if AI_VERSION_ARCH_NUM < 5
       if (HasParameter(anodeEntry, "disp_padding", atNode))
       {
          float padding = AiNodeGetFlt(atNode, "disp_padding");
          
-         GET_POINT(cmin, atNode, "min");
-         GET_POINT(cmax, atNode, "max");
+         AtPoint cmin = AiNodeGetPnt(atNode, "min");
+         AtPoint cmax = AiNodeGetPnt(atNode, "max");
          
          cmin.x -= padding;
          cmin.y -= padding;
@@ -1036,9 +980,10 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          cmax.y += padding;
          cmax.z += padding;
          
-         SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
-         SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
+         AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+         AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
       }
+      #endif
       
       if (cleanupCmd != "")
       {

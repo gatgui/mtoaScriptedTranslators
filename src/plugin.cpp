@@ -97,55 +97,6 @@ MStatus RemovePluginLoadedCallback()
    return status;
 }
 
-#ifdef OLD_API
-float GetSampleFrame(CArnoldSession *session, unsigned int step)
-{
-   MFnDependencyNode opts(session->GetArnoldRenderOptions());
-   
-   int steps = opts.findPlug("motion_steps").asInt();
-   
-   if (steps <= 1)
-   {
-      return session->GetExportFrame();
-   }
-   else
-   {
-      int mbtype = opts.findPlug("range_type").asInt();
-      float start = session->GetExportFrame();
-      float end = start;
-      
-      if (mbtype == MTOA_MBLUR_TYPE_CUSTOM)
-      {
-         start += opts.findPlug("motion_start").asFloat();
-         end += opts.findPlug("motion_end").asFloat();
-      }
-      else
-      {
-         float frames = opts.findPlug("motion_frames").asFloat();
-         
-         if (mbtype == MTOA_MBLUR_TYPE_START)
-         {
-            end += frames;
-         }
-         else if (mbtype == MTOA_MBLUR_TYPE_END)
-         {
-            start -= frames;
-         }
-         else
-         {
-            float half_frames = 0.5f * frames;
-            start -= half_frames;
-            end += half_frames;
-         }
-      }
-      
-      float incr = (end - start) / (steps - 1);
-      
-      return start + step * incr;
-   }
-}
-#endif
-
 bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
 {
    if (data.isArray)
@@ -426,7 +377,7 @@ void NodeInitializer(CAbTranslator context)
          return;
       }
       
-      CExtensionAttrHelper procHelper(context.maya, "procedural");
+      CExtensionAttrHelper procHelper(context.maya, it->second.arnoldType.c_str());
       
       if (it->second.isShape)
       {
@@ -460,7 +411,7 @@ void NodeInitializer(CAbTranslator context)
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                arnoldNode = decl.substr(p0, p1-p0);
-               if (arnoldNode.length() == 0) arnoldNode = "procedural";
+               if (arnoldNode.length() == 0) arnoldNode = it->second.arnoldType;
                
                // arnold attr name
                p0 = p1 + 1;
@@ -694,6 +645,22 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
             
             if (MGlobal::executePythonCommand(checkCmdBeg + "Export" + checkCmdEnd, rv) == MS::kSuccess && rv != 0)
             {
+               #if AI_VERSION_ARCH_NUM >= 5
+               if (MGlobal::executePythonCommand(checkCmdBeg + "ArnoldType" + checkCmdEnd, rv) != MS::kSuccess || rv == 0)
+               {
+                  // 'ArnoldType' function must be defined for arnold 5 or above
+                  return false;
+               }
+               std::string arnoldTypeScript = pymod + ".ArnoldType";
+               MString srv;
+               if (MGlobal::executePythonCommand(MString(arnoldTypeScript.c_str()) + "()", srv) != MS::kSuccess || srv.length() == 0)
+               {
+                  return false;
+               }
+               gTranslators[nodeType].arnoldType = AtString(srv.asChar());
+               #else
+               gTranslators[nodeType].arnoldType = "procedural";
+               #endif
                gTranslators[nodeType].exportCmd = exportScript.c_str();
                gTranslators[nodeType].attrsAdded = false;
                gTranslators[nodeType].deferred = false;
