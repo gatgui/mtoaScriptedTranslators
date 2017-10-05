@@ -25,25 +25,25 @@ void MayaPluginLoadedCallback(const MStringArray &strs, void *)
 {
    // 0 = pluginPath, 1 = pluginName
    MString pluginName = strs[1];
-   
+
    // Start the arnold universe so that attribute helpers can query arnold nodes
    bool AiUniverseCreated = false;
    if (!AiUniverseIsActive())
    {
       AiMsgSetConsoleFlags(AI_LOG_NONE);
       AiMsgSetLogFileFlags(AI_LOG_NONE);
-      
+
       AiBegin();
-      
+
       MString pluginPath = MString("$ARNOLD_PLUGIN_PATH").expandEnvironmentVariablesAndTilde();
       if (pluginPath.length() > 0)
       {
          AiLoadPlugins(pluginPath.asChar());
       }
-      
+
       AiUniverseCreated = true;
    }
-   
+
    std::map<std::string, CScriptedTranslator>::iterator it = gTranslators.begin();
    while (it != gTranslators.end())
    {
@@ -58,7 +58,7 @@ void MayaPluginLoadedCallback(const MStringArray &strs, void *)
       }
       ++it;
    }
-   
+
    if (AiUniverseCreated)
    {
       AiEnd();
@@ -71,20 +71,20 @@ MCallbackId AddPluginLoadedCallback()
    {
       return gPluginLoadedCallbackId;
    }
-   
+
    MStatus status;
-   
+
    // Create plugin loaded callback
    gPluginLoadedCallbackId = MSceneMessage::addStringArrayCallback(MSceneMessage::kAfterPluginLoad, MayaPluginLoadedCallback, NULL, &status);
    CHECK_MSTATUS(status);
-   
+
    return gPluginLoadedCallbackId;
 }
 
 MStatus RemovePluginLoadedCallback()
 {
    MStatus status;
-   
+
    // Delete plugin loaded callback
    if (gPluginLoadedCallbackId != 0)
    {
@@ -103,7 +103,7 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
    {
       // Temporarily reset isArray so we can call StringToValue for each element
       data.isArray = false;
-      
+
       std::string elt;
       std::vector<AtParamValue> values;
       AtParamValue eval;
@@ -123,7 +123,7 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
       {
          values.push_back(eval);
       }
-      
+
       val->ARRAY() = AiArrayAllocate(values.size(), 1, data.type);
       for (size_t i=0; i<values.size(); ++i)
       {
@@ -298,9 +298,7 @@ bool StringToValue(const std::string &sval, CAttrData &data, AtParamValue *val)
          return true;
       case AI_TYPE_STRING:
          {
-            char *tmp = new char[sval.length()+1];
-            strcpy(tmp, sval.c_str());
-            val->STR() = (AtString)tmp;
+            val->STR() = AtString(sval.c_str());
          }
          return true;
       case AI_TYPE_NODE:
@@ -322,9 +320,9 @@ void DestroyValue(CAttrData &data, AtParamValue *val)
    {
       switch (data.type)
       {
-      case AI_TYPE_STRING:
-         delete[] val->STR();
-         break;
+      // case AI_TYPE_STRING:
+      //    delete[] val->STR();
+      //    break;
       case AI_TYPE_MATRIX:
          free(val->pMTX());
          break;
@@ -364,7 +362,7 @@ bool HasParameter(const AtNodeEntry *anodeEntry, const char *param, AtNode *anod
 void NodeInitializer(CAbTranslator context)
 {
    std::map<std::string, CScriptedTranslator>::iterator it = gTranslators.find(context.maya.asChar());
-   
+
    if (it != gTranslators.end())
    {
       MObject plugin = MFnPlugin::findPlugin(it->second.requiredPlugin);
@@ -376,103 +374,103 @@ void NodeInitializer(CAbTranslator context)
          it->second.deferred = true;
          return;
       }
-      
+
       CExtensionAttrHelper procHelper(context.maya, it->second.arnoldType.c_str());
-      
+
       if (it->second.isShape)
       {
          CScriptedShapeTranslator::MakeCommonAttributes(procHelper);
       }
-      
+
       MString setupAttrsCmd = it->second.setupAttrsCmd + "()";
-      
+
       if (setupAttrsCmd.length() > 0)
       {
          MStringArray rv;
          MStatus stat = MGlobal::executePythonCommand(setupAttrsCmd, rv);
-         
+
          if (stat == MStatus::kSuccess && rv.length() > 1)
          {
             for (unsigned int i=0; i<rv.length(); ++i)
             {
                CAttrData data;
                std::string arnoldNode, arnoldAttr;
-               
+
                std::string decl = rv[i].asChar();
                size_t p0 = 0, p1;
-               
+
                // attribute type
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                if (sscanf(decl.substr(p0, p1-p0).c_str(), "%d", &data.type) != 1) continue;
-               
+
                // arnold node name
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                arnoldNode = decl.substr(p0, p1-p0);
                if (arnoldNode.length() == 0) arnoldNode = it->second.arnoldType;
-               
+
                // arnold attr name
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                arnoldAttr = decl.substr(p0, p1-p0);
-               
+
                // name
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                data.name = decl.substr(p0, p1-p0).c_str();
-               
+
                // shortName
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                data.shortName = decl.substr(p0, p1-p0).c_str();
-               
+
                // isArray
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                data.isArray = (decl.substr(p0, p1-p0) == "1");
-               
+
                // default
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                std::string sdefval = decl.substr(p0, p1-p0);
-               
+
                // min
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                std::string sminval = decl.substr(p0, p1-p0);
-               
+
                // max
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                std::string smaxval = decl.substr(p0, p1-p0);
-               
+
                // softMin
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                std::string ssoftminval = decl.substr(p0, p1-p0);
-               
+
                // softMax
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                std::string ssoftmaxval = decl.substr(p0, p1-p0);
-               
+
                // keyable
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
                if (p1 == std::string::npos) continue;
                data.keyable = (decl.substr(p0, p1-p0) == "1");
-               
+
                // enums
                p0 = p1 + 1;
                p1 = decl.find('|', p0);
@@ -502,7 +500,7 @@ void NodeInitializer(CAbTranslator context)
                   data.hasMax = false;
                   data.hasSoftMin = false;
                   data.hasSoftMax = false;
-                  
+
                   if (data.type == AI_TYPE_BYTE ||
                       data.type == AI_TYPE_INT ||
                       data.type == AI_TYPE_UINT ||
@@ -513,10 +511,10 @@ void NodeInitializer(CAbTranslator context)
                      data.hasSoftMin = StringToValue(ssoftminval, data, &(data.softMin));
                      data.hasSoftMax = StringToValue(ssoftmaxval, data, &(data.softMax));
                   }
-                  
+
                   // create attributes
                   helper.MakeInput(data);
-               
+
                   // cleanup values
                   if (hasDefault) DestroyValue(data, &(data.defaultValue));
                   if (data.hasMin) DestroyValue(data, &(data.min));
@@ -527,9 +525,9 @@ void NodeInitializer(CAbTranslator context)
             }
          }
       }
-      
+
       it->second.attrsAdded = true;
-      
+
       if (it->second.deferred)
       {
          // Was deferred, so that SetupAE should not have been called yet
@@ -548,27 +546,27 @@ void RegisterTranslators(CExtension& plugin)
 {
    static const char firstSeparator[] = ":;";
    static const char secondSeparator[] = ",";
-   
+
    MString csVar = "$MTOA_SCRIPTED_TRANSLATORS";
    MString csExpVar = csVar.expandEnvironmentVariablesAndTilde();
-   
+
    if (csExpVar != csVar)
    {
       MGlobal::executePythonCommand(gModuleSetup);
-      
+
       std::string tmp;
       std::string nodeType;
       std::string pluginName;
       std::string nodeList = csExpVar.asChar();
-      
+
       size_t p0 = 0;
       size_t p1 = nodeList.find_first_of(firstSeparator, p0);
       size_t t0 = 0;
-      
+
       while (p1 != std::string::npos)
       {
          tmp = nodeList.substr(p0, p1-p0);
-         
+
          t0 = tmp.find_first_of(secondSeparator);
          if (t0 != std::string::npos)
          {
@@ -580,16 +578,16 @@ void RegisterTranslators(CExtension& plugin)
             nodeType = tmp;
             pluginName = nodeType;
          }
-         
+
          if (nodeType.length() > 0 && RegisterTranslator(plugin, nodeType, pluginName))
          {
             MGlobal::displayInfo("[mtoa.scriptedTranslators] Registered translator for node \"" + MString(nodeType.c_str()) + "\"");
          }
-         
+
          p0 = p1 + 1;
          p1 = nodeList.find_first_of(firstSeparator, p0);
       }
-      
+
       t0 = nodeList.find_first_of(secondSeparator, p0);
       if (t0 != std::string::npos)
       {
@@ -601,7 +599,7 @@ void RegisterTranslators(CExtension& plugin)
          nodeType = nodeList.substr(p0);
          pluginName = nodeType;
       }
-      
+
       if (nodeType.length() > 0 && RegisterTranslator(plugin, nodeType, pluginName))
       {
          MGlobal::displayInfo("[mtoa.scriptedTranslators] Registered translator for node \"" + MString(nodeType.c_str()) + "\"");
@@ -612,37 +610,37 @@ void RegisterTranslators(CExtension& plugin)
 bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::string &providedByPlugin)
 {
    static const char whitespaces[] = " \t\n\v";
-   
+
    // Strip leading and trailing spaces
    size_t w0 = nodeType.find_first_not_of(whitespaces);
-   
+
    if (w0 != std::string::npos)
    {
       size_t w1 = nodeType.find_last_not_of(whitespaces);
-      
+
       nodeType = nodeType.substr(w0, w1-w0+1);
-      
+
       if (nodeType.length() > 0)
       {
          // Check if nodeType already registered
          std::map<std::string, CScriptedTranslator>::iterator it = gTranslators.find(nodeType);
-         
+
          if (it == gTranslators.end())
          {
             // Check if Export function can be found
             std::string pymod = "mtoa_" + nodeType;
-            
+
             if (MGlobal::executePythonCommand(MString("import ") + pymod.c_str()) != MS::kSuccess)
             {
                return false;
             }
-            
+
             std::string exportScript = pymod + ".Export";
-            
+
             int rv = 0;
             MString checkCmdBeg = MString("hasattr(") + pymod.c_str() + ", \"";
             MString checkCmdEnd = "\")";
-            
+
             if (MGlobal::executePythonCommand(checkCmdBeg + "Export" + checkCmdEnd, rv) == MS::kSuccess && rv != 0)
             {
                #if AI_VERSION_ARCH_NUM >= 5
@@ -668,7 +666,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                gTranslators[nodeType].supportVolumes = false;
                gTranslators[nodeType].supportInstances = false;
                gTranslators[nodeType].requiredPlugin = providedByPlugin.c_str();
-               
+
                std::string isShapeScript = pymod + ".IsShape";
                if (MGlobal::executePythonCommand(checkCmdBeg + "IsShape" + checkCmdEnd, rv) == MS::kSuccess && rv != 0)
                {
@@ -676,7 +674,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                   MGlobal::executePythonCommand(MString(isShapeScript.c_str()) + "()", result);
                   gTranslators[nodeType].isShape = (result != 0);
                }
-               
+
                if (gTranslators[nodeType].isShape)
                {
                   std::string volumeScript = pymod + ".SupportVolumes";
@@ -690,7 +688,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                   {
                      gTranslators[nodeType].supportVolumes = false;
                   }
-                  
+
                   std::string instanceScript = pymod + ".SupportInstances";
                   if (MGlobal::executePythonCommand(checkCmdBeg + "SupportInstances" + checkCmdEnd, rv) == MS::kSuccess && rv != 0)
                   {
@@ -703,21 +701,21 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                      gTranslators[nodeType].supportInstances = false;
                   }
                }
-               
+
                std::string cleanupScript = pymod + ".Cleanup";
                if (MGlobal::executePythonCommand(checkCmdBeg + "Cleanup" + checkCmdEnd, rv) != MS::kSuccess || rv == 0)
                {
                   cleanupScript = "";
                }
                gTranslators[nodeType].cleanupCmd = cleanupScript.c_str();
-               
+
                std::string attrScript = pymod + ".SetupAttrs";
                if (MGlobal::executePythonCommand(checkCmdBeg + "SetupAttrs" + checkCmdEnd, rv) != MS::kSuccess || rv == 0)
                {
                   attrScript = "";
                }
                gTranslators[nodeType].setupAttrsCmd = attrScript.c_str();
-               
+
                std::string aeScript = pymod + ".SetupAE";
                if (MGlobal::executePythonCommand(checkCmdBeg + "SetupAE" + checkCmdEnd, rv) != MS::kSuccess || rv == 0)
                {
@@ -725,7 +723,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                   tempPy += "  import scriptedTranslatorUtils\n";
                   tempPy += "  scriptedTranslatorUtils.DefaultSetupAE('" + providedByPlugin + "', '" + nodeType + "', translator, asShape=";
                   tempPy += (gTranslators[nodeType].isShape ? "True)" : "False)");
-                  
+
                   if (MGlobal::executePythonCommand(tempPy.c_str()) != MS::kSuccess)
                   {
                      MGlobal::displayInfo("[mtoa.scriptedTranslators] Could not generate default AE template for node " + MString(nodeType.c_str()));
@@ -737,7 +735,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
                   }
                }
                gTranslators[nodeType].setupAECmd = aeScript.c_str();
-               
+
                if (gTranslators[nodeType].isShape)
                {
                   MGlobal::displayInfo(MString("[mtoa.scriptedTranslators] Register \"") + nodeType.c_str() + "\" as shape");
@@ -753,7 +751,7 @@ bool RegisterTranslator(CExtension& plugin, std::string &nodeType, const std::st
          }
       }
    }
-   
+
    return false;
 }
 
