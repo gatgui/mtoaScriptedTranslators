@@ -19,10 +19,11 @@ _fps = {
 
 _verexp = re.compile(r"(\d+)\.(\d+).(\d+)")
 
+_arnold5 = (int(arnold.AiGetVersion()[0]) >= 5)
 
 def GetMtoAVersion():
     global _verexp
-    
+
     v = cmds.pluginInfo("mtoa", query=1, version=1)
     m = _verexp.search(v)
     if m != None:
@@ -47,22 +48,22 @@ def IsMtoAVersionAtLeast(majv, minv, patchv):
 
 def GetFPS():
     global _fps
-  
+
     rv = OpenMaya.MGlobal.executeCommandStringResult("currentUnit -q -t")
-    
+
     if rv in _fps:
         return _fps[rv]
-      
+
     else:
         m = re.match(r"(\d+)fps", rv)
-        
+
         if m:
             fps = float(m.group(1))
         else:
             fps = 1.0
-        
+
         _fps[rv] = fps
-        
+
         return fps
 
 def EvaluateFrames(node, timeAttr, inRenderFrame):
@@ -73,7 +74,7 @@ def EvaluateFrames(node, timeAttr, inRenderFrame):
     timePlug = "%s.%s" % (node, timeAttr)
     outRenderFrame = inRenderFrame
     outSampleFrame = cmds.getAttr(timePlug)
-    
+
     conns = cmds.listConnections(timePlug, s=1, d=0, sh=1, p=1)
     if conns != None:
         restoreConns = []
@@ -96,7 +97,7 @@ def EvaluateFrames(node, timeAttr, inRenderFrame):
             outRenderFrame = cmds.getAttr(srcPlug)
             for src, dst in restoreConns:
                 cmds.connectAttr(src, dst)
-   
+
     return (outRenderFrame, outSampleFrame)
 
 def GetOverrideAttr(nodeName, attrName, failedValue=None, returnValueProcess=None, verbose=False):
@@ -104,7 +105,7 @@ def GetOverrideAttr(nodeName, attrName, failedValue=None, returnValueProcess=Non
         if verbose:
             print("scriptedTranslatorUtils.GetOverrideAttr: No attribute \"%s\" on node \"%s\"" % (attrName, nodeName))
         return failedValue
-    
+
     try:
         retval = failedValue
         found = False
@@ -136,15 +137,15 @@ def GetOverrideAttr(nodeName, attrName, failedValue=None, returnValueProcess=Non
                     if found:
                         break
                     i -= 1
-        
+
         if not found:
             retval = cmds.getAttr("%s.%s" % (nodeName, attrName))
-        
+
         if returnValueProcess:
             return returnValueProcess(retval)
         else:
             return retval
-    
+
     except Exception, e:
         print("scriptedTranslatorUtils.GetOverrideAttr: Failed to get value: %s" % e)
         return failedValue
@@ -165,17 +166,17 @@ def GetTransformationBlur(nodeName):
 class AttrData(object):
     TrueValues = ["1", "on", "true", "True"]
     FalseValues = ["0", "off", "false", "False"]
-    ListTypes = [arnold.AI_TYPE_POINT2, arnold.AI_TYPE_POINT, arnold.AI_TYPE_VECTOR,
-                 arnold.AI_TYPE_RGB, arnold.AI_TYPE_RGBA,
-                 arnold.AI_TYPE_MATRIX]
-    
+    _PointTypes = ([arnold.AI_TYPE_POINT2, arnold.AI_TYPE_POINT] if not _arnold5 else [arnold.AI_TYPE_VECTOR2])
+    ListTypes = [arnold.AI_TYPE_VECTOR, arnold.AI_TYPE_RGB, arnold.AI_TYPE_RGBA, arnold.AI_TYPE_MATRIX] + _PointTypes
+
+
     def __init__(self, **kwargs):
         super(AttrData, self).__init__()
         self.reset()
         for k, v in kwargs.iteritems():
             if hasattr(self, k):
                 setattr(self, k, v)
-    
+
     def reset(self):
         self.isArray = False
         self.keyable = False
@@ -190,13 +191,13 @@ class AttrData(object):
         self.enums = []
         self.arnoldNode = ""
         self.arnoldAttr = ""
-    
+
     def elementToString(self, v):
         if self.type in self.ListTypes:
             return ",".join(v)
         else:
             return str(v)
-    
+
     def stringToElement(self, s):
         if self.type in self.ListTypes:
             return map(lambda x: float(x), s.split(","))
@@ -225,19 +226,19 @@ class AttrData(object):
             return s
         else:
             raise Exception("Unsupported type %d" % self.type)
-    
+
     def valueToString(self, v):
         if self.isArray:
             return ";".join(map(lambda x: self.elementToString(x), v))
         else:
             return self.elementToString(v)
-    
+
     def stringToValue(self, s):
         if self.isArray:
             return map(lambda x: self.stringToElement(x.strip()), s.split(";"))
         else:
             return self.stringToElement(s)
-    
+
     def __str__(self):
         s  = "%d" % self.type
         s += "|%s" % self.arnoldNode
@@ -253,7 +254,7 @@ class AttrData(object):
         s += "|%d" % (1 if self.keyable else 0)
         s += "|%s" % ",".join(self.enums)
         return s
-    
+
     def parse(self, s):
         self.reset()
         spl = s.split("|")
@@ -285,17 +286,17 @@ def DefaultSetupAE(pluginName, nodeType, translator, asShape=True):
    import pymel.core as pm
    if not pm.pluginInfo(pluginName, query=1, loaded=1):
       return
-  
+
    try:
       import mtoa.ui.ae.templates as templates
-      
+
       if not asShape:
          class DefaultNodeTemplate(templates.AttributeTemplate):
             def setup(self):
                self.addControl("aiUserOptions", label="User Options")
-         
+
          templates.registerTranslatorUI(DefaultNodeTemplate, nodeType, translator)
-      
+
       else:
          class DefaultShapeTemplate(templates.ShapeTranslatorTemplate):
             def setup(self):
@@ -308,9 +309,9 @@ def DefaultSetupAE(pluginName, nodeType, translator, asShape=True):
                self.addSeparator()
                self.addControl("aiUserOptions", label="User Options")
                self.addSeparator()
-         
+
          templates.registerTranslatorUI(DefaultShapeTemplate, nodeType, translator)
-      
+
    except Exception, e:
       print("scriptedTranslatorUtils.DefaultSetupAE: Failed\n%s" % e)
 

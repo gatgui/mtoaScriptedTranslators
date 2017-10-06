@@ -6,9 +6,9 @@ A Maya to Arnold (MtoA) extension to allow export of new node types using python
 
 
 ## Requirements
-  - Arnold 4.1 or above
-  - Maya 2013 or above
-  - MtoA 1.0.0.1 or above
+  - Arnold 4.2 or above
+  - Maya 2015 or above
+  - MtoA 1.4.0.0 or above
 
 
 ## Build
@@ -24,7 +24,7 @@ If maya is installed in its default system location, the 'maya-ver=*target_maya_
 
 ## Install
 
-Add the build output folder to your `MAYA_EXTENSIONS_PATH`
+Add the build output folder to your `MTOA_EXTENSIONS_PATH`
 
 
 ## Usage
@@ -36,7 +36,11 @@ It expects a colon or semicolon separated list of '*node_type*,*plugin_name*' it
 For each found node type, the extension will try to import a python module named 'mtoa_*node_type*'. When it succeeds doing so, it will then look up for a function named 'Export' in the module. Only then will the node type be registered to MtoA.
   
 Other functions may be defined to control the behavior of the extension, but only the 'Export' one is required. Follows a full list of recognized functions with their arguments and expected return values:
-  
+
+- **ArnoldType** (Arnold 5.0 or above)
+
+Returns the arnold node type string.
+
 - **IsShape()**
 
 Returns whether or not the translator should be based on CNodeTranslator or CShapeTranslator MtoA class.

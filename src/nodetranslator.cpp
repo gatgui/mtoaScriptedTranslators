@@ -27,43 +27,8 @@ AtNode* CScriptedNodeTranslator::CreateArnoldNodes()
       return NULL;
    }
 
-   return AddArnoldNode("procedural");
+   return AddArnoldNode(translatorIt->second.arnoldType);
 }
-
-#ifdef OLD_API
-
-AtNode* CScriptedNodeTranslator::Init(CArnoldSession* session, const MObject& object, const MString &outputAttr)
-{
-   AtNode *rv = CNodeTranslator::Init(session, object, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-
-void CScriptedNodeTranslator::Export(AtNode *atNode)
-{
-   RunScripts(atNode, 0);
-}
-
-void CScriptedNodeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step);
-}
-
-void CScriptedNodeTranslator::Update(AtNode *atNode)
-{
-   RunScripts(atNode, 0, true);
-}
-
-void CScriptedNodeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step, true);
-}
-
-void CScriptedNodeTranslator::Delete()
-{
-}
-
-#else
 
 void CScriptedNodeTranslator::Init()
 {
@@ -86,8 +51,6 @@ void CScriptedNodeTranslator::RequestUpdate()
    SetUpdateMode(AI_RECREATE_NODE);
    CNodeTranslator::RequestUpdate();
 }
-
-#endif
 
 bool CScriptedNodeTranslator::RequiresMotionData()
 {
@@ -124,13 +87,9 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
    command += buffer;
    command += ", ";
    
-#ifdef OLD_API
-   sprintf(buffer, "%f", GetSampleFrame(m_session, step));
-#else
    unsigned int nsteps = 0;
    const double *mframes = GetMotionFrames(nsteps);
    sprintf(buffer, "%f", (step < nsteps ? mframes[step] : GetExportFrame()));
-#endif
    command += buffer;
    
    command += ", \"(" + node.name() + "\", \"";
@@ -151,16 +110,41 @@ void CScriptedNodeTranslator::RunScripts(AtNode *atNode, unsigned int step, bool
       attrsSet.insert(attrs[i].asChar());
    }
    std::set<std::string>::iterator attrsEnd = attrsSet.end();
-   
+
+   #if AI_VERSION_ARCH_NUM < 5
    if (attrsSet.find("min") == attrsEnd || attrsSet.find("max") == attrsEnd)
    {
       // Either min or max is missing, force load_at_init
       AiNodeSetBool(atNode, "load_at_init", true);
    }
+   #endif // AI_VERSION_ARCH_NUM < 5
 
    if (!IsExportingMotion())
    {
       m_exportedSteps.clear();
+
+      if (RequiresMotionData())
+      {
+         bool setMStart = (attrsSet.find("motion_start") == attrsEnd);
+         bool setMEnd = (attrsSet.find("motion_end") == attrsEnd);
+
+         if (setMStart || setMEnd)
+         {
+            const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
+
+            double mstart, mend;
+            GetSessionOptions().GetMotionRange(mstart, mend);
+
+            if (setMStart && HasParameter(anodeEntry, "motion_start"))
+            {
+               AiNodeSetFlt(atNode, "motion_start", (float)mstart);
+            }
+            if (setMEnd && HasParameter(anodeEntry, "motion_end"))
+            {
+               AiNodeSetFlt(atNode, "motion_end", (float)mend);
+            }
+         }
+      }
    }
 
    if (m_exportedSteps.find(step) != m_exportedSteps.end())
