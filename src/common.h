@@ -4,10 +4,6 @@
 #include "utils/Version.h"
 #include "ai.h"
 
-#if MTOA_ARCH_VERSION_NUM == 1 && MTOA_MAJOR_VERSION_NUM <= 3
-#  define OLD_API
-#endif
-
 #if AI_VERSION_ARCH_NUM < 5
 #  define AiMax MAX
 #  define ARRAY() ARRAY
@@ -26,11 +22,6 @@
 #  define pMTX() pMTX
 #  define STR() STR
 #  define PTR() PTR
-#  define GET_POINT(out, node, name) AtPoint out = AiNodeGetPnt(node, name);
-#  define SET_POINT(node, name, x, y, z) AiNodeSetPnt(node, name, x, y, z);
-#else 
-#  define GET_POINT(out, node, name) AtVector out = AiNodeGetVec(node, name);
-#  define SET_POINT(node, name, x, y, z) AiNodeSetVec(node, name, x, y, z);
 #endif // AI_VERSION_ARCH_NUM < 5
 
 #endif

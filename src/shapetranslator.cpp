@@ -20,48 +20,6 @@ CScriptedShapeTranslator::~CScriptedShapeTranslator()
 {
 }
 
-#ifdef OLD_API
-
-AtNode* CScriptedShapeTranslator::Init(CArnoldSession *session, MDagPath& dagPath, MString outputAttr)
-{
-   AtNode *rv = CShapeTranslator::Init(session, dagPath, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-
-AtNode* CScriptedShapeTranslator::Init(CArnoldSession* session, MObject& object, MString outputAttr)
-{
-   AtNode *rv = CDagTranslator::Init(session, object, outputAttr);
-   m_motionBlur = (IsMotionBlurEnabled(MTOA_MBLUR_DEFORM|MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled());
-   return rv;
-}
-
-void CScriptedShapeTranslator::Export(AtNode *atNode)
-{
-   RunScripts(atNode, 0);
-}
-
-void CScriptedShapeTranslator::ExportMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step);
-}
-
-void CScriptedShapeTranslator::Update(AtNode *atNode)
-{
-   RunScripts(atNode, 0, true);
-}
-
-void CScriptedShapeTranslator::UpdateMotion(AtNode *atNode, unsigned int step)
-{
-   RunScripts(atNode, step, true);
-}
-
-void CScriptedShapeTranslator::Delete()
-{
-}
-
-#else
-
 void CScriptedShapeTranslator::Init()
 {
    CShapeTranslator::Init();
@@ -84,49 +42,33 @@ void CScriptedShapeTranslator::RequestUpdate()
    CShapeTranslator::RequestUpdate();
 }
 
-#endif
-
 AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
 {
    std::map<std::string, CScriptedTranslator>::iterator translatorIt;
    MFnDependencyNode fnNode(GetMayaObject());
-   
+
    translatorIt = gTranslators.find(fnNode.typeName().asChar());
    if (translatorIt == gTranslators.end())
    {
       AiMsgError("[mtoa.scriptedTranslators] No command to export node \"%s\" of type %s.", fnNode.name().asChar(), fnNode.typeName().asChar());
       return NULL;
    }
-   
+
    float step = FindMayaPlug("aiStepSize").asFloat();
    bool asVolume =  (step > AI_EPSILON);
-   
+
    m_masterNode = 0;
-   
+
    if (!IsMasterInstance())
    {
       MDagPath masterPath = GetMasterInstance();
-#ifdef OLD_API
-      std::vector<CNodeTranslator*> translators;
-      CNodeAttrHandle handle(masterPath);
-      unsigned int n = m_session->GetActiveTranslators(handle, translators);
-      for (unsigned int i=0; i<n; ++i)
-      {
-         m_masterNode = translators[i]->GetArnoldRootNode();
-         if (m_masterNode)
-         {
-            break;
-         }
-      }
-#else
       CNodeTranslator *trsl = CNodeTranslator::GetTranslator(masterPath);
       if (trsl)
       {
          m_masterNode = trsl->GetArnoldNode();
       }
-#endif
    }
-   
+
    if (!m_masterNode)
    {
       if (asVolume && !translatorIt->second.supportVolumes)
@@ -135,7 +77,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode("pyproc");
+         return AddArnoldNode(translatorIt->second.arnoldType);
       }
    }
    else
@@ -146,7 +88,7 @@ AtNode* CScriptedShapeTranslator::CreateArnoldNodes()
       }
       else
       {
-         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : "pyproc");
+         return AddArnoldNode(translatorIt->second.supportInstances ? "ginstance" : translatorIt->second.arnoldType.c_str());
       }
    }
 }
@@ -157,7 +99,7 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
 {
    // Get instance shadingEngine
    shadingEngineNode.setObject(MObject::kNullObj);
-   
+
    // First try the usual way
    MPlug shadingGroupPlug = GetNodeShadingGroup(dagPath.node(), (dagPath.isInstanced() ? dagPath.instanceNumber() : 0));
    if (!shadingGroupPlug.isNull())
@@ -165,20 +107,20 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
       shadingEngineNode.setObject(shadingGroupPlug.node());
       return;
    }
-   
+
    char buffer[64];
-   
+
    // Check connection from any shadingEngine on shape
    MStringArray connections;
    MGlobal::executeCommand("listConnections -s 1 -d 0 -c 1 -type shadingEngine "+dagPath.fullPathName(), connections);
-   
+
    MSelectionList sl;
-   
+
    if (connections.length() == 0)
    {
       // Check for direct surface shader connection
       MGlobal::executeCommand("listConnections -s 1 -d 0 -c 1 "+dagPath.fullPathName(), connections);
-      
+
       for (unsigned int cidx=0; cidx<connections.length(); cidx+=2)
       {
          MString srcNode = connections[cidx+1];
@@ -188,14 +130,14 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
          if (rv.length() > 0 && rv[0].indexW("arnold/shader/surface") != -1)
          {
             connections.clear();
-            
+
             MGlobal::executeCommand("listConnections -s 0 -d 1 -c 1 -type shadingEngine "+srcNode, connections);
-            
+
             if (connections.length() == 2)
             {
                sl.add(connections[1]);
             }
-            
+
             break;
          }
       }
@@ -209,44 +151,44 @@ void CScriptedShapeTranslator::GetShapeInstanceShader(MDagPath& dagPath, MFnDepe
    {
       // Many connections, expects the destination plug in shape to be an array
       // Use instance number as logical index, if this fails, use first shadingEngine in list
-      
+
       bool found = false;
-      
+
       sprintf(buffer, "[%d]", dagPath.instanceNumber());
       MString iidx = buffer;
-      
+
       for (unsigned int cidx = 0; cidx < connections.length(); cidx += 2)
       {
          MString conn = connections[cidx];
-         
+
          if (conn.length() < iidx.length())
          {
             continue;
          }
-         
+
          if (conn.substring(conn.length() - iidx.length(), conn.length() - 1) != iidx)
          {
             continue;
          }
-         
+
          sl.add(connections[cidx+1]);
-         
+
          found = true;
-         
+
          break;
       }
-      
+
       if (!found)
       {
          MGlobal::displayWarning("[mtoaScriptedTranslators] Instance shader plug not found, use first found shadingEngine \"" + connections[1] + "\"");
          sl.add(connections[1]);
       }
    }
-   
+
    if (sl.length() == 1)
    {
       MObject shadingEngineObj;
-      
+
       if (sl.getDependNode(0, shadingEngineObj) == MS::kSuccess && shadingEngineObj.apiType() == MFn::kShadingEngine)
       {
          shadingEngineNode.setObject(shadingEngineObj);
@@ -271,50 +213,46 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
 {
    std::map<std::string, CScriptedTranslator>::iterator translatorIt;
    MFnDependencyNode fnNode(GetMayaObject());
-   
+
    translatorIt = gTranslators.find(fnNode.typeName().asChar());
    if (translatorIt == gTranslators.end())
    {
       AiMsgError("[mtoa.scriptedTranslators] No command to export node \"%s\" of type %s.", fnNode.name().asChar(), fnNode.typeName().asChar());
       return;
    }
-   
+
    MString exportCmd = translatorIt->second.exportCmd;
    MString cleanupCmd = translatorIt->second.cleanupCmd;
-   
+
    MFnDagNode node(m_dagPath.node());
-   
+
    bool isMasterDag = false;
    bool transformBlur = IsMotionBlurEnabled(MTOA_MBLUR_OBJECT) && IsLocalMotionBlurEnabled();
    bool deformBlur = IsMotionBlurEnabled(MTOA_MBLUR_DEFORM) && IsLocalMotionBlurEnabled();
-   
+
    char buffer[64];
-   
+
    MString command = exportCmd;
    command += "(";
-   
+
    sprintf(buffer, "%f", GetExportFrame());
    command += buffer;
    command += ", ";
-   
+
    sprintf(buffer, "%d", step);
    command += buffer;
    command += ", ";
-   
+
    // current sample frame
-#ifdef OLD_API
-   sprintf(buffer, "%f", GetSampleFrame(m_session, step));
-#else
    unsigned int nsteps = 0;
    const double *mframes = GetMotionFrames(nsteps);
    sprintf(buffer, "%f", (step < nsteps ? mframes[step] : GetExportFrame()));
-#endif
    command += buffer;
    command += ", ";
-   
+
    // List of arnold attributes the custom shape export command has overriden
    MStringArray attrs;
-   
+
    if (!m_masterNode)
    {
       command += "(\"" + m_dagPath.partialPathName() + "\", \"";
@@ -330,14 +268,14 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       command += AiNodeGetName(m_masterNode);
       command += "\"))";
    }
-   
+
    MStatus status = MGlobal::executePythonCommand(command, attrs);
    if (!status)
    {
       AiMsgError("[mtoa.scriptedTranslators] Failed to export node \"%s\".", node.name().asChar());
       return;
    }
-   
+
    // Build set of attributes already processed
    std::set<std::string> attrsSet;
    for (unsigned int i=0; i<attrs.length(); ++i)
@@ -345,7 +283,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       attrsSet.insert(attrs[i].asChar());
    }
    std::set<std::string>::iterator attrsEnd = attrsSet.end();
-   
+
    // Should be getting displacement shader from master instance only
    //   as arnold do not support displacement shader overrides for ginstance
    MFnDependencyNode masterShadingEngine;
@@ -358,14 +296,10 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
    bool outputDispHeight = false;
    bool outputDispZeroValue = false;
    bool outputDispAutobump = false;
-#ifdef OLD_API
-   bool exportShaders = true;
-#else
    bool exportShaders = RequiresShaderExport();
-#endif
 
    const AtNodeEntry *anodeEntry = AiNodeGetNodeEntry(atNode);
-   
+
    if (exportShaders)
    {
       GetShapeInstanceShader(m_dagPath, shadingEngine);
@@ -378,11 +312,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          masterShadingEngine.setObject(shadingEngine.object());
       }
    }
-   
+
    AtMatrix matrix;
    MMatrix mmatrix = m_dagPath.inclusiveMatrix();
    ConvertMatrix(matrix, mmatrix);
-   
+
    // Set transformation matrix
    if (attrsSet.find("matrix") == attrsEnd)
    {
@@ -390,7 +324,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       {
          if (transformBlur)
          {
-            if (step == 0)
+            if (!IsExportingMotion())
             {
                AtArray* matrices = AiArrayAllocate(1, GetNumMotionSteps(), AI_TYPE_MATRIX);
                AiArraySetMtx(matrices, step, matrix);
@@ -408,7 +342,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
    }
-   
+
    #if AI_VERSION_ARCH_NUM < 5
    // Set bounding box
    if (attrsSet.find("min") == attrsEnd && attrsSet.find("max") == attrsEnd)
@@ -416,28 +350,28 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       // Now check if min and max parameters are valid parameter names on arnold node
       if (HasParameter(anodeEntry, "min") != 0 && HasParameter(anodeEntry, "max") != 0)
       {
-         if (step == 0)
+         if (!IsExportingMotion())
          {
             MBoundingBox bbox = node.boundingBox();
-            
+
             MPoint bmin = bbox.min();
             MPoint bmax = bbox.max();
-            
-            SET_POINT(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
-            SET_POINT(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
+
+            AiNodeSetPnt(atNode, "min", static_cast<float>(bmin.x), static_cast<float>(bmin.y), static_cast<float>(bmin.z));
+            AiNodeSetPnt(atNode, "max", static_cast<float>(bmax.x), static_cast<float>(bmax.y), static_cast<float>(bmax.z));
          }
          else
          {
             if (transformBlur || deformBlur)
             {
-               GET_POINT(cmin, atNode, "min");
-               GET_POINT(cmax, atNode, "max");
-               
+               AtPoint cmin = AiNodeGetPnt(atNode, "min");
+               AtPoint cmax = AiNodeGetPnt(atNode, "max");
+
                MBoundingBox bbox = node.boundingBox();
-               
+
                MPoint bmin = bbox.min();
                MPoint bmax = bbox.max();
-               
+
                if (bmin.x < cmin.x)
                   cmin.x = static_cast<float>(bmin.x);
                if (bmin.y < cmin.y)
@@ -450,31 +384,27 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   cmax.y = static_cast<float>(bmax.y);
                if (bmax.z > cmax.z)
                   cmax.z = static_cast<float>(bmax.z);
-               
-               SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
-               SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
+
+               AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+               AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
             }
          }
       }
    }
    #endif // AI_VERSION_ARCH_NUM < 5
 
-#ifdef OLD_API
-   if (step == 0)
-#else
    if (!IsExportingMotion())
-#endif
    {
       // Set common attributes
       MPlug plug;
 
       m_exportedSteps.clear();
 
-      if (AiNodeIs(atNode, (AtString)"procedural"))
+      if (AiNodeIs(atNode, translatorIt->second.arnoldType))
       {
          // Note: it is up to the procedural to properly forward (or not) those parameters to the node
          //       it creates
-         
+
          if (attrsSet.find("subdiv_type") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_type");
@@ -487,7 +417,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetInt(atNode, "subdiv_type", plug.asInt());
             }
          }
-         
+
          if (attrsSet.find("subdiv_iterations") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_iterations");
@@ -500,7 +430,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetByte(atNode, "subdiv_iterations", plug.asInt());
             }
          }
-         
+
          if (attrsSet.find("subdiv_adaptive_metric") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_adaptive_metric");
@@ -513,7 +443,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetInt(atNode, "subdiv_adaptive_metric", plug.asInt());
             }
          }
-         
+
          if (attrsSet.find("subdiv_pixel_error") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_pixel_error");
@@ -526,7 +456,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetFlt(atNode, "subdiv_pixel_error", plug.asFloat());
             }
          }
-         
+
          if (attrsSet.find("subdiv_dicing_camera") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_dicing_camera");
@@ -537,33 +467,29 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             if (!plug.isNull() && HasParameter(anodeEntry, "subdiv_dicing_camera", atNode, "constant NODE"))
             {
                AtNode *cameraNode = NULL;
-               
+
                MPlugArray plugs;
                plug.connectedTo(plugs, true, false);
-               
+
                if (plugs.length() == 1)
                {
                   MFnDagNode camDag(plugs[0].node());
                   MDagPath camPath;
-                  
+
                   if (camDag.getPath(camPath) == MS::kSuccess)
                   {
-#ifdef OLD_API
-                     cameraNode = ExportDagPath(camPath);
-#else
                      CDagTranslator *trsl = CShapeTranslator::ExportDagPath(camPath);
                      if (trsl)
                      {
                         cameraNode = trsl->GetArnoldNode();
                      }
-#endif
                   }
                }
-               
+
                AiNodeSetPtr(atNode, "subdiv_dicing_camera", cameraNode);
             }
          }
-         
+
          if (attrsSet.find("subdiv_uv_smoothing") == attrsEnd)
          {
             plug = FindMayaPlug("subdiv_uv_smoothing");
@@ -576,7 +502,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetInt(atNode, "subdiv_uv_smoothing", plug.asInt());
             }
          }
-         
+
          if (attrsSet.find("subdiv_smooth_derivs") == attrsEnd)
          {
             plug = FindMayaPlug("aiSubdivSmoothDerivs");
@@ -585,7 +511,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetBool(atNode, "subdiv_smooth_derivs", plug.asBool());
             }
          }
-         
+
          if (attrsSet.find("smoothing") == attrsEnd)
          {
             // Use maya shape built-in attribute
@@ -595,7 +521,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetBool(atNode, "smoothing", plug.asBool());
             }
          }
-         
+
          if (attrsSet.find("disp_height") == attrsEnd)
          {
             plug = FindMayaPlug("aiDispHeight");
@@ -605,7 +531,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                dispHeight = plug.asFloat();
             }
          }
-         
+
          if (attrsSet.find("disp_zero_value") == attrsEnd)
          {
             plug = FindMayaPlug("aiDispZeroValue");
@@ -615,7 +541,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                dispZeroValue = plug.asFloat();
             }
          }
-         
+
          if (attrsSet.find("disp_autobump") == attrsEnd)
          {
             plug = FindMayaPlug("aiDispAutobump");
@@ -625,7 +551,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                dispAutobump = plug.asBool();
             }
          }
-         
+
          if (attrsSet.find("disp_padding") == attrsEnd)
          {
             plug = FindMayaPlug("aiDispPadding");
@@ -635,49 +561,45 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                dispPadding = AiMax(dispPadding, plug.asFloat());
             }
          }
-         
+
          // Set diplacement shader
          if (exportShaders && attrsSet.find("disp_map") == attrsEnd)
          {
             if (masterShadingEngine.object() != MObject::kNullObj)
             {
                MPlugArray shaderConns;
-               
+
                MPlug shaderPlug = masterShadingEngine.findPlug("displacementShader");
-               
+
                shaderPlug.connectedTo(shaderConns, true, false);
-               
+
                if (shaderConns.length() > 0)
                {
                   MFnDependencyNode dispNode(shaderConns[0].node());
-                  
+
                   plug = dispNode.findPlug("aiDisplacementPadding");
                   if (!plug.isNull())
                   {
                      outputDispPadding = true;
                      dispPadding = AiMax(dispPadding, plug.asFloat());
                   }
-                  
+
                   plug = dispNode.findPlug("aiDisplacementAutoBump");
                   if (!plug.isNull())
                   {
                      outputDispAutobump = true;
                      dispAutobump = dispAutobump || plug.asBool();
                   }
-                  
+
                   if (HasParameter(anodeEntry, "disp_map", atNode, "constant ARRAY NODE"))
                   {
-#ifdef OLD_API
-                     AtNode *dispImage = ExportNode(shaderConns[0]);
-#else
                      AtNode *dispImage = ExportConnectedNode(shaderConns[0]);
-#endif
                      AiNodeSetArray(atNode, "disp_map", AiArrayConvert(1, 1, AI_TYPE_NODE, &dispImage));
                   }
                }
             }
          }
-         
+
          if (outputDispHeight && HasParameter(anodeEntry, "disp_height", atNode, "constant FLOAT"))
          {
             AiNodeSetFlt(atNode, "disp_height", dispHeight);
@@ -694,7 +616,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          {
             AiNodeSetBool(atNode, "disp_autobump", dispAutobump);
          }
-         
+
          // Old point based SSS parameter
          if (attrsSet.find("sss_sample_distribution") == attrsEnd)
          {
@@ -708,7 +630,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetInt(atNode, "sss_sample_distribution", plug.asInt());
             }
          }
-         
+
          // Old point based SSS parameter
          if (attrsSet.find("sss_sample_spacing") == attrsEnd)
          {
@@ -722,7 +644,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetFlt(atNode, "sss_sample_spacing", plug.asFloat());
             }
          }
-         
+
          if (attrsSet.find("min_pixel_width") == attrsEnd)
          {
             plug = FindMayaPlug("aiMinPixelWidth");
@@ -731,7 +653,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetFlt(atNode, "min_pixel_width", plug.asFloat());
             }
          }
-         
+
          if (attrsSet.find("mode") == attrsEnd)
          {
             plug = FindMayaPlug("aiMode");
@@ -740,7 +662,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                AiNodeSetInt(atNode, "mode", plug.asShort());
             }
          }
-         
+
          if (attrsSet.find("basis") == attrsEnd)
          {
             plug = FindMayaPlug("aiBasis");
@@ -750,14 +672,13 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
          }
       }
-      
-      if (AiNodeIs(atNode, (AtString)"ginstance"))
+      else if (AiNodeIs(atNode, (AtString)"ginstance"))
       {
          if (attrsSet.find("node") == attrsEnd)
          {
             AiNodeSetPtr(atNode, "node", m_masterNode);
          }
-         
+
          if (attrsSet.find("inherit_xform") == attrsEnd)
          {
             AiNodeSetBool(atNode, "inherit_xform", false);
@@ -799,7 +720,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
          #endif // AI_VERSION_ARCH_NUM >= 5
       }
-      
+
       if (attrsSet.find("sidedness") == attrsEnd)
       {
          // Use maya shape built-in attribute
@@ -807,7 +728,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          if (!plug.isNull() && HasParameter(anodeEntry, "sidedness", atNode, "constant BYTE"))
          {
             AiNodeSetByte(atNode, "sidedness", plug.asBool() ? AI_RAY_ALL : 0);
-            
+
             // Only set invert_normals if doubleSided attribute could be found
             if (!plug.asBool() && attrsSet.find("invert_normals") == attrsEnd)
             {
@@ -820,7 +741,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
          }
       }
-      
+
       if (attrsSet.find("receive_shadows") == attrsEnd)
       {
          // Use maya shape built-in attribute
@@ -830,7 +751,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             AiNodeSetBool(atNode, "receive_shadows", plug.asBool());
          }
       }
-      
+
       if (attrsSet.find("self_shadows") == attrsEnd)
       {
          plug = FindMayaPlug("self_shadows");
@@ -843,7 +764,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             AiNodeSetBool(atNode, "self_shadows", plug.asBool());
          }
       }
-      
+
       if (attrsSet.find("opaque") == attrsEnd)
       {
          plug = FindMayaPlug("opaque");
@@ -856,7 +777,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             AiNodeSetBool(atNode, "opaque", plug.asBool());
          }
       }
-      
+
       if (attrsSet.find("matte") == attrsEnd)
       {
          plug = FindMayaPlug("matte");
@@ -869,28 +790,50 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             AiNodeSetBool(atNode, "matte", plug.asBool());
          }
       }
-      
+
+      #if AI_VERSION_ARCH_NUM >= 5
+      if (RequiresMotionData())
+      {
+         bool setMStart = (attrsSet.find("motion_start") == attrsEnd);
+         bool setMEnd = (attrsSet.find("motion_end") == attrsEnd);
+         if (setMStart || setMEnd)
+         {
+            double mstart, mend;
+            GetSessionOptions().GetMotionRange(mstart, mend);
+            if (setMStart && HasParameter(anodeEntry, "motion_start"))
+            {
+               AiNodeSetFlt(atNode, "motion_start", (float)mstart);
+            }
+            if (setMEnd && HasParameter(anodeEntry, "motion_end"))
+            {
+               AiNodeSetFlt(atNode, "motion_end", (float)mend);
+            }
+         }
+      }
+      #endif
+
       if (attrsSet.find("visibility") == attrsEnd)
       {
          if (HasParameter(anodeEntry, "visibility", atNode, "constant BYTE"))
          {
             int visibility = AI_RAY_ALL;
-            
+
             // Use maya shape built-in attribute
             plug = FindMayaPlug("castsShadows");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_SHADOW;
             }
-            
+
             // Use maya shape built-in attribute
             plug = FindMayaPlug("primaryVisibility");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_CAMERA;
             }
-            
+
             #if AI_VERSION_ARCH_NUM < 5
+
             // Use maya shape built-in attribute
             plug = FindMayaPlug("visibleInReflections");
             if (!plug.isNull() && !plug.asBool())
@@ -926,21 +869,25 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
 
             #else
+
             plug = FindMayaPlug("aiVisibleInDiffuseReflection");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_DIFFUSE_REFLECT;
             }
+
             plug = FindMayaPlug("aiVisibleInSpecularReflection");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_SPECULAR_REFLECT;
             }
+
             plug = FindMayaPlug("aiVisibleInDiffuseTransmission");
             if (!plug.isNull() && !plug.asBool())
             {
                visibility &= ~AI_RAY_DIFFUSE_TRANSMIT;
             }
+
             plug = FindMayaPlug("aiVisibleInSpecularTransmission");
             if (!plug.isNull() && !plug.asBool())
             {
@@ -948,11 +895,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
 
             #endif // AI_VERSION_ARCH_NUM < 5
-            
+
             AiNodeSetByte(atNode, "visibility", visibility & 0xFF);
          }
       }
-      
+
       if (attrsSet.find("sss_setname") == attrsEnd)
       {
          plug = FindMayaPlug("aiSssSetname");
@@ -964,7 +911,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             }
          }
       }
-      
+
       // Set surface shader
       if (exportShaders && HasParameter(anodeEntry, "shader", atNode, "constant NODE"))
       {
@@ -972,15 +919,11 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          {
             if (shadingEngine.object() != MObject::kNullObj)
             {
-#ifdef OLD_API
-               AtNode *shader = ExportNode(shadingEngine.findPlug("message"));
-#else
                AtNode *shader = ExportConnectedNode(shadingEngine.findPlug("message"));
-#endif
                if (shader != NULL)
                {
                   const AtNodeEntry *entry = AiNodeGetNodeEntry(shader);
-                  
+
                   if (AiNodeEntryGetType(entry) != AI_NODE_SHADER)
                   {
                      MGlobal::displayWarning("[mtoaScriptedTranslators] Node generated from \"" + shadingEngine.name() +
@@ -990,7 +933,7 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
                   else
                   {
                      AiNodeSetPtr(atNode, "shader", shader);
-                     
+
                      if (AiNodeLookUpUserParameter(atNode, "mtoa_shading_groups") == 0)
                      {
                         AiNodeDeclare(atNode, "mtoa_shading_groups", "constant ARRAY NODE");
@@ -1002,15 +945,15 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
          }
       }
    }
-   
+
    ExportLightLinking(atNode);
-   
+
    MPlug plug = FindMayaPlug("aiTraceSets");
    if (!plug.isNull())
    {
       ExportTraceSets(atNode, plug);
    }
-   
+
    if (m_exportedSteps.find(step) != m_exportedSteps.end())
    {
       char numstr[16];
@@ -1018,34 +961,36 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
       MGlobal::displayWarning(MString("[mtoaScriptedTranslator] Motion step already processed: ") + numstr);
    }
    m_exportedSteps.insert(step);
-   
+
    // Call cleanup command on last export step
    if (!m_motionBlur || m_exportedSteps.size() == GetNumMotionSteps())
    {
+      #if AI_VERSION_ARCH_NUM < 5
       if (HasParameter(anodeEntry, "disp_padding", atNode))
       {
          float padding = AiNodeGetFlt(atNode, "disp_padding");
-         
-         GET_POINT(cmin, atNode, "min");
-         GET_POINT(cmax, atNode, "max");
-         
+
+         AtPoint cmin = AiNodeGetPnt(atNode, "min");
+         AtPoint cmax = AiNodeGetPnt(atNode, "max");
+
          cmin.x -= padding;
          cmin.y -= padding;
          cmin.z -= padding;
          cmax.x += padding;
          cmax.y += padding;
          cmax.z += padding;
-         
-         SET_POINT(atNode, "min", cmin.x, cmin.y, cmin.z);
-         SET_POINT(atNode, "max", cmax.x, cmax.y, cmax.z);
+
+         AiNodeSetPnt(atNode, "min", cmin.x, cmin.y, cmin.z);
+         AiNodeSetPnt(atNode, "max", cmax.x, cmax.y, cmax.z);
       }
-      
+      #endif
+
       if (cleanupCmd != "")
       {
          command = cleanupCmd += "((\"" + m_dagPath.partialPathName() + "\", \"";
          command += AiNodeGetName(atNode);
          command += "\"), ";
-         
+
          if (!m_masterNode)
          {
             command += "None)";
@@ -1056,9 +1001,9 @@ void CScriptedShapeTranslator::RunScripts(AtNode *atNode, unsigned int step, boo
             command += AiNodeGetName(m_masterNode);
             command += "\"))";
          }
-         
+
          status = MGlobal::executePythonCommand(command);
-         
+
          if (!status)
          {
             AiMsgError("[mtoa.scriptedTranslators] Failed to cleanup node \"%s\".", node.name().asChar());
